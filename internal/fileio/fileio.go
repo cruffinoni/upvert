@@ -11,7 +11,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/google/renameio/v2"
+	"github.com/google/renameio/v2/maybe"
 )
 
 // Exists reports whether path exists and is not a directory.
@@ -39,8 +39,10 @@ func Resolve(root, rel string) string {
 }
 
 // WriteAtomic replaces path with data while preserving its permissions.
+// On Unix the replacement is atomic; on Windows renameio cannot offer that,
+// so it falls back to a plain write.
 func WriteAtomic(path string, data []byte, mode fs.FileMode) error {
-	if err := renameio.WriteFile(path, data, mode); err != nil {
+	if err := maybe.WriteFile(path, data, mode); err != nil {
 		return fmt.Errorf("replace %s: %w", path, err)
 	}
 	return nil
