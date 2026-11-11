@@ -12,7 +12,7 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/tidwall/gjson v1.20.2
 	github.com/tidwall/sjson v1.2.8
-	golang.org/x/mod v0.29.0
+	golang.org/x/mod v0.42.0
 	golang.org/x/sync v0.25.0
 	golang.org/x/sys v0.50.0
 	golang.org/x/term v0.48.0
