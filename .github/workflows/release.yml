@@ -107,6 +107,7 @@ jobs:
   provider-neutral-validation:
     name: provider-neutral-validation
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -148,6 +149,7 @@ jobs:
       - validate-tag
       - provider-neutral-validation
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: write
     steps:
