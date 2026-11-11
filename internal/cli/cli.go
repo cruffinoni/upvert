@@ -4,22 +4,13 @@ package cli
 import (
 	"errors"
 	"fmt"
-	"runtime/debug"
 
 	"github.com/spf13/cobra"
 
+	"github.com/dayrion/upvert/internal/buildinfo"
 	"github.com/dayrion/upvert/internal/bump"
 	"github.com/dayrion/upvert/internal/ui"
 )
-
-// buildVersion returns the module version injected by the Go toolchain.
-func buildVersion() string {
-	info, ok := debug.ReadBuildInfo()
-	if !ok || info.Main.Version == "" || info.Main.Version == "(devel)" {
-		return "dev"
-	}
-	return info.Main.Version
-}
 
 // applyOutput binds the logger to the output and error writers configured on
 // cmd, which keeps the engine testable.
@@ -88,6 +79,7 @@ func newBumpCommand(cfg *bump.Config, kind bump.Kind, use, short string) *cobra.
 		},
 	}
 	addBumpFlags(cmd, cfg, &write, &commit, &push)
+	cmd.Flags().StringVarP(&cfg.Dir, "dir", "C", ".", "run as if started in this directory")
 	return cmd
 }
 
@@ -111,6 +103,7 @@ func newRollbackCommand(cfg *bump.Config) *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&apply, "apply", false, "apply the rollback (default is a preview)")
+	cmd.Flags().StringVarP(&cfg.Dir, "dir", "C", ".", "run as if started in this directory")
 	cmd.Flags().StringVar(&cfg.VersionFile, "version-file", "", "file that contains the version string")
 	cmd.Flags().StringVar(&cfg.Message, "message", "", "commit message template used by the bump")
 	return cmd
@@ -123,7 +116,7 @@ func newVersionCommand() *cobra.Command {
 		Short: "Print upvert version information",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			_, err := fmt.Fprintf(cmd.OutOrStdout(), "upvert %s\n", buildVersion())
+			_, err := fmt.Fprintf(cmd.OutOrStdout(), "upvert %s\ncommit: %s\nbuilt: %s\n", buildinfo.Current(), buildinfo.Commit, buildinfo.BuiltAt)
 			return err
 		},
 	}
@@ -141,23 +134,23 @@ repositories that mix several of those ecosystems.
 
 The default is a preview: upvert reports what it would change and writes
 nothing until --write, --commit, or --push is supplied. Rollback previews
-until --apply is supplied.`,
+until --apply is supplied. Use "upvert update" to install a GitHub release.`,
 		Example: `  upvert patch                     # preview
   upvert patch --write             # update files only
   upvert minor --commit            # update, commit, and tag
   upvert patch --pre alpha --commit
   upvert minor --push              # update, commit, tag, and push
-  upvert rollback --apply          # undo the last bump`,
+  upvert rollback --apply          # undo the last bump
+  upvert update                    # install the latest stable release`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-	root.PersistentFlags().StringVarP(&cfg.Dir, "dir", "C", ".", "run as if started in this directory")
-
 	root.AddCommand(
 		newBumpCommand(cfg, bump.Patch, "patch", "Increment the patch version (1.0.0 -> 1.0.1)"),
-		newBumpCommand(cfg, bump.Minor, "minor", "Increment the minor version (1.0.0 -> 1.1.0)"),
-		newBumpCommand(cfg, bump.Major, "major", "Increment the major version (1.0.0 -> 2.0.0)"),
+		newBumpCommand(cfg, bump.Minor, "minor", "Increment the minor version, resetting patch (1.0.0 -> 1.1.0)"),
+		newBumpCommand(cfg, bump.Major, "major", "Increment the major version, resetting minor and patch (1.0.0 -> 2.0.0)"),
 		newRollbackCommand(cfg),
+		newUpdateCommand(),
 		newVersionCommand(),
 	)
 	return root

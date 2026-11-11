@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/dayrion/upvert/internal/buildinfo"
 )
 
 func writeProjectFile(t *testing.T, dir, name, content string) {
@@ -138,6 +140,16 @@ func TestCLIUnknownCommand(t *testing.T) {
 }
 
 func TestCLIVersion(t *testing.T) {
+	version, commit, builtAt := buildinfo.Version, buildinfo.Commit, buildinfo.BuiltAt
+	buildinfo.Version = "1.2.3"
+	buildinfo.Commit = "abc123"
+	buildinfo.BuiltAt = "2026-01-02T03:04:05Z"
+	t.Cleanup(func() {
+		buildinfo.Version = version
+		buildinfo.Commit = commit
+		buildinfo.BuiltAt = builtAt
+	})
+
 	cmd := New()
 	var stdout bytes.Buffer
 	cmd.SetOut(&stdout)
@@ -146,8 +158,10 @@ func TestCLIVersion(t *testing.T) {
 	if err := cmd.ExecuteContext(t.Context()); err != nil {
 		t.Fatalf("execute: %v", err)
 	}
-	if !strings.Contains(stdout.String(), "upvert ") {
-		t.Fatalf("version output = %q", stdout.String())
+	for _, want := range []string{"upvert 1.2.3", "commit: abc123", "built: 2026-01-02T03:04:05Z"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("version output = %q, want %q", stdout.String(), want)
+		}
 	}
 }
 
@@ -160,7 +174,7 @@ func TestCLIHelpListsCommands(t *testing.T) {
 	if err := cmd.ExecuteContext(t.Context()); err != nil {
 		t.Fatalf("execute: %v", err)
 	}
-	for _, command := range []string{"patch", "minor", "major", "rollback"} {
+	for _, command := range []string{"patch", "minor", "major", "rollback", "update"} {
 		if !strings.Contains(stdout.String(), command) {
 			t.Fatalf("help does not mention %q:\n%s", command, stdout.String())
 		}
@@ -181,6 +195,27 @@ func TestCLIPatchHelpShowsActions(t *testing.T) {
 			t.Fatalf("patch help does not mention %q:\n%s", flag, stdout.String())
 		}
 	}
+}
+
+func TestCLIDirFlagIsScopedToBumpAndRollback(t *testing.T) {
+	check := func(args []string, want bool) {
+		t.Helper()
+		cmd := New()
+		var stdout bytes.Buffer
+		cmd.SetOut(&stdout)
+		cmd.SetErr(&bytes.Buffer{})
+		cmd.SetArgs(args)
+		if err := cmd.ExecuteContext(t.Context()); err != nil {
+			t.Fatalf("execute: %v", err)
+		}
+		if got := strings.Contains(stdout.String(), "--dir"); got != want {
+			t.Fatalf("%v contains --dir = %v, want %v:\n%s", args, got, want, stdout.String())
+		}
+	}
+	check([]string{"patch", "--help"}, true)
+	check([]string{"rollback", "--help"}, true)
+	check([]string{"update", "--help"}, false)
+	check([]string{"version", "--help"}, false)
 }
 
 func TestCLIRollbackHelpShowsApply(t *testing.T) {

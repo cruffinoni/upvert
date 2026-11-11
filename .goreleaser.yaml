@@ -1,0 +1,40 @@
+version: 2
+project_name: upvert
+
+builds:
+  - id: upvert
+    main: ./cmd/upvert
+    binary: upvert
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/dayrion/upvert/internal/buildinfo.Version={{.Version}}
+      - -X github.com/dayrion/upvert/internal/buildinfo.Commit={{.Commit}}
+      - -X github.com/dayrion/upvert/internal/buildinfo.BuiltAt={{.Date}}
+
+archives:
+  - id: archives
+    ids:
+      - upvert
+    name_template: "upvert_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+
+checksum:
+  name_template: checksums.txt
+
+release:
+  github:
+    owner: dayrion
+    name: upvert
+  prerelease: auto
+  make_latest: "{{ .Env.GORELEASER_MAKE_LATEST }}"

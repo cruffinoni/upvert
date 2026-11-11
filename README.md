@@ -19,6 +19,21 @@ go build -o upvert ./cmd/upvert
 go install ./cmd/upvert
 ```
 
+Install a published release:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/dayrion/upvert/master/install.sh | sh
+# Windows PowerShell
+irm https://raw.githubusercontent.com/dayrion/upvert/master/install.ps1 | iex
+```
+
+Then keep it current with:
+
+```sh
+upvert update
+upvert update --version vX.Y.Z-rc.1
+```
+
 Run the test suite and the Go guidelines linter with:
 
 ```sh
@@ -30,7 +45,7 @@ $HOME/dev/go-guidelines/gg-lint scan .
 ## Usage
 
 ```text
-upvert <patch|minor|major|rollback> [flags]
+upvert <patch|minor|major|rollback|update|version> [flags]
 ```
 
 The default is a preview that prints a summary of every change it would make.
@@ -54,7 +69,8 @@ upvert patch -C ../other-repo         # operate on another repository
 | `minor`    | Increment the minor version, resetting patch (1.0.0 -> 1.1.0)           |
 | `major`    | Increment the major version, resetting minor and patch (1.0.0 -> 2.0.0) |
 | `rollback` | Remove the last bump tag and reset the work tree (use `--apply`)          |
-| `version`  | Print the upvert build version                                          |
+| `update`   | Install a GitHub release, latest stable by default                      |
+| `version`  | Print the upvert version, commit, and build time                        |
 
 ### Flags
 
@@ -82,11 +98,45 @@ Modifiers:
 | `--message <template>`    | Commit message template containing `{version}`                 |
 | `--pre-bump <cmd>`        | Shell command to run before bumping                            |
 | `--post-bump <cmd>`       | Shell command to run after bumping                             |
-| `-C, --dir <path>`        | Run as if started in this directory                            |
+| `-C, --dir <path>`        | Run as if started in this directory (bump/rollback only)        |
+
+```sh
+upvert update [--version <tag>] [--bin-dir <dir>] [--no-path-update] [--quiet]
+```
+
+Update flags:
+
+| Flag                | Description                                                        |
+|---------------------|--------------------------------------------------------------------|
+| `--version <tag>`   | Release tag to install; defaults to the latest stable release      |
+| `--bin-dir <dir>`   | Install directory (default: `~/.local/bin` or the Windows location) |
+| `--no-path-update`  | Windows only: do not add the install directory to the user PATH    |
+| `--quiet`           | Suppress step progress; print only the final result and errors     |
 
 upvert reads no configuration files and no `UPVERT_*` environment variables.
 Every setting is a command-line flag. The defaults are the current directory,
 `CHANGELOG.md`, and `chore: bump version to {version}`.
+
+## Releases and self-update
+
+Releases are published from `v*` tags by GoReleaser after CI validates the tag.
+The release assets are `upvert_<version>_<os>_<arch>.tar.gz` (or `.zip` on
+Windows) plus `checksums.txt`.
+
+```sh
+upvert update                         # latest stable release
+upvert update --version v1.2.3-rc.1   # explicit prerelease
+upvert update --bin-dir "$HOME/bin"   # custom install directory
+upvert update --quiet
+```
+
+`upvert update` installs into `$XDG_BIN_HOME` or `$HOME/.local/bin` on Unix
+and `%LOCALAPPDATA%\Programs\upvert` on Windows. Use `--bin-dir` to install
+somewhere else. Prereleases are installed only when passed explicitly with
+`--version`.
+
+`upvert version` prints the injected release version, commit, and build time.
+See `docs/release-versioning.md` for the tag, release, and updater contract.
 
 ## What a bump does
 
@@ -206,7 +256,13 @@ internal/vcs              git command-line adapter
 internal/gomod            go.mod maintenance
 internal/changelog        changelog entry rendering
 internal/ui               levelled terminal output
+internal/buildinfo        injected release version metadata
+internal/update           release download, checksum, and install logic
 ```
+
+Release automation lives in `.github/workflows` and `.goreleaser.yaml`;
+`install.sh` and `install.ps1` install published binaries. The updater contract
+is documented in `docs/release-versioning.md`.
 
 Each supported ecosystem implements `ecosystem.Language` (`Detect`, `Scan`,
 `Read`, `Write`); `internal/project` wires the adapters into an ordered registry
@@ -217,5 +273,7 @@ The plumbing is deliberately library-backed: cobra for commands,
 Masterminds semver for version math, sjson/gjson for formatting-preserving JSON
 edits, go-toml for TOML parsing and targeted edits, go-ini for setup.cfg
 parsing, renameio for atomic writes, and fatih/color plus go-isatty for terminal
-output. Git itself is still invoked as the system git command so credential
-helpers and transports keep working.
+output. The self-updater adds golang.org/x/mod, golang.org/x/sync,
+golang.org/x/term, and golang.org/x/sys; tests use testify. Git itself is still
+invoked as the system git command so credential helpers and transports keep
+working.

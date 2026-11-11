@@ -1,0 +1,170 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate-tag:
+    name: validate-release-tag
+    runs-on: ubuntu-latest
+    outputs:
+      make_latest: ${{ steps.validate.outputs.make_latest }}
+    steps:
+      - id: validate
+        name: Validate semantic version tag
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          TAG_CREATED: ${{ github.event.created }}
+        run: |
+          if [[ "$TAG_CREATED" != "true" ]]; then
+            echo "Release tags must be newly created; updates to an existing tag are rejected." >&2
+            exit 1
+          fi
+          if [[ ! "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
+            printf 'Invalid release tag %q. Expected vX.Y.Z or vX.Y.Z-<prerelease>.\n' "$RELEASE_TAG" >&2
+            exit 1
+          fi
+          if [[ "$RELEASE_TAG" == *-* ]]; then
+            echo 'make_latest=false' >> "$GITHUB_OUTPUT"
+          else
+            echo 'make_latest=true' >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Require tag commit on master
+        shell: bash
+        run: |
+          git fetch --no-tags origin master:refs/remotes/origin/master
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/master; then
+            printf 'Release tags must point to a commit on master.\n' >&2
+            exit 1
+          fi
+      - name: Wait for master CI
+        shell: bash
+        timeout-minutes: 30
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          appear_deadline=$((SECONDS + 300))
+          run_id=""
+          while [[ -z "$run_id" ]]; do
+            runs=$(gh run list \
+              --commit "$GITHUB_SHA" \
+              --event push \
+              --limit 20 \
+              --json databaseId,status,conclusion,workflowName)
+            run_id=$(jq -r '[.[] | select(.workflowName == "CI" and .conclusion == "success")][0].databaseId // empty' <<<"$runs")
+            if [[ -n "$run_id" ]]; then
+              echo "Master CI already succeeded for $GITHUB_SHA."
+              exit 0
+            fi
+            run_id=$(jq -r '[.[] | select(.workflowName == "CI")][0].databaseId // empty' <<<"$runs")
+            if [[ -z "$run_id" ]]; then
+              if (( SECONDS >= appear_deadline )); then
+                echo "No CI run appeared for $GITHUB_SHA within 5 minutes." >&2
+                exit 1
+              fi
+              echo "Waiting for a CI run for $GITHUB_SHA to appear..."
+              sleep 10
+            fi
+          done
+
+          echo "Waiting for CI run $run_id..."
+          completion_deadline=$((SECONDS + 1200))
+          while :; do
+            state=$(gh run view "$run_id" --json status,conclusion --jq '[.status, .conclusion] | @tsv')
+            status=${state%%$'\t'*}
+            conclusion=${state#*$'\t'}
+            if [[ "$status" == "completed" ]]; then
+              if [[ "$conclusion" == "success" ]]; then
+                echo "Master CI succeeded for $GITHUB_SHA."
+                exit 0
+              fi
+              echo "Master CI for $GITHUB_SHA finished with conclusion: $conclusion" >&2
+              exit 1
+            fi
+            if (( SECONDS >= completion_deadline )); then
+              echo "Timed out waiting for CI run $run_id." >&2
+              exit 1
+            fi
+            echo "CI is $status; waiting..."
+            sleep 10
+          done
+
+  provider-neutral-validation:
+    name: provider-neutral-validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Validate GoReleaser config
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: v2.19.0
+          args: check
+        env:
+          GORELEASER_MAKE_LATEST: 'false'
+      - name: Build snapshot release archives
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: v2.19.0
+          args: release --snapshot --clean
+        env:
+          GORELEASER_MAKE_LATEST: 'false'
+      - name: Smoke-test extracted Linux release archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive=$(find dist -type f -name 'upvert_*_linux_amd64.tar.gz' -print -quit)
+          test -n "$archive"
+          tmp=$(mktemp -d)
+          trap 'rm -rf "$tmp"' EXIT
+          tar -xzf "$archive" -C "$tmp"
+          binary=$(find "$tmp" -type f -name upvert -print -quit)
+          test -n "$binary"
+          "$binary" version | grep -q '^upvert '
+
+  publish-release:
+    name: publish-release
+    needs:
+      - validate-tag
+      - provider-neutral-validation
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Publish release
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: v2.19.0
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GORELEASER_MAKE_LATEST: ${{ needs.validate-tag.outputs.make_latest }}
+          GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
