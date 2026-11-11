@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/dayrion/upvert/internal/ecosystem"
-	"github.com/dayrion/upvert/internal/fileio"
-	"github.com/dayrion/upvert/internal/semver"
+	"github.com/cruffinoni/upvert/internal/ecosystem"
+	"github.com/cruffinoni/upvert/internal/fileio"
+	"github.com/cruffinoni/upvert/internal/semver"
 )
 
 // printSummary renders the dry-run report.

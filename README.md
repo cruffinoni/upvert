@@ -34,9 +34,9 @@ default install directory). It does not modify `PATH`.
 Install a published release:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/dayrion/upvert/master/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/cruffinoni/upvert/master/install.sh | sh
 # Windows PowerShell
-irm https://raw.githubusercontent.com/dayrion/upvert/master/install.ps1 | iex
+irm https://raw.githubusercontent.com/cruffinoni/upvert/master/install.ps1 | iex
 ```
 
 Then keep it current with:

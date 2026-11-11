@@ -5,7 +5,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/dayrion/upvert/internal/fileio"
+	"github.com/cruffinoni/upvert/internal/fileio"
 )
 
 var (

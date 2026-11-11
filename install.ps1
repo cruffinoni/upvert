@@ -1,7 +1,7 @@
 # Install upvert from GitHub Releases on Windows.
 #
 # Usage:
-#   irm https://raw.githubusercontent.com/dayrion/upvert/master/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/cruffinoni/upvert/master/install.ps1 | iex
 #   .\install.ps1 -Version vX.Y.Z -BinDir C:\tools\bin
 #   .\install.ps1 -Local -BinDir C:\tools\bin
 [CmdletBinding()]
@@ -15,7 +15,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
-$repo = 'dayrion/upvert'
+$repo = 'cruffinoni/upvert'
 $releasesUrl = "https://github.com/$repo/releases"
 $downloadUrl = "$releasesUrl/download"
 

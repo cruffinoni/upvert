@@ -8,7 +8,7 @@ import (
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 
-	"github.com/dayrion/upvert/internal/fileio"
+	"github.com/cruffinoni/upvert/internal/fileio"
 )
 
 // errJSONKeyNotFound reports a missing object key during a targeted JSON edit.

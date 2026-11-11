@@ -4,8 +4,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/dayrion/upvert/internal/ecosystem"
-	"github.com/dayrion/upvert/internal/fileio"
+	"github.com/cruffinoni/upvert/internal/ecosystem"
+	"github.com/cruffinoni/upvert/internal/fileio"
 )
 
 // writeVersionFile updates the Version declaration in a Go source file.

@@ -17,7 +17,7 @@ import (
 
 const (
 	// releasesURL is the base URL of the GitHub release assets.
-	releasesURL = "https://github.com/dayrion/upvert/releases"
+	releasesURL = "https://github.com/cruffinoni/upvert/releases"
 	// defaultTimeout bounds one complete update, including every download.
 	defaultTimeout = 5 * time.Minute
 )

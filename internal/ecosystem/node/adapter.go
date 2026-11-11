@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/dayrion/upvert/internal/ecosystem"
-	"github.com/dayrion/upvert/internal/fileio"
+	"github.com/cruffinoni/upvert/internal/ecosystem"
+	"github.com/cruffinoni/upvert/internal/fileio"
 )
 
 // Adapter implements ecosystem.Language for Node.js projects.

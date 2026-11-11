@@ -3,7 +3,7 @@
 package project
 
 import (
-	"github.com/dayrion/upvert/internal/ecosystem"
+	"github.com/cruffinoni/upvert/internal/ecosystem"
 )
 
 // Part is one language's contribution to a project.

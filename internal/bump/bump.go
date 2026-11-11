@@ -6,10 +6,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/dayrion/upvert/internal/project"
-	"github.com/dayrion/upvert/internal/semver"
-	"github.com/dayrion/upvert/internal/ui"
-	"github.com/dayrion/upvert/internal/vcs"
+	"github.com/cruffinoni/upvert/internal/project"
+	"github.com/cruffinoni/upvert/internal/semver"
+	"github.com/cruffinoni/upvert/internal/ui"
+	"github.com/cruffinoni/upvert/internal/vcs"
 )
 
 // Kind selects which component of a version is incremented.

@@ -5,14 +5,14 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/dayrion/upvert/internal/changelog"
-	"github.com/dayrion/upvert/internal/ecosystem"
-	"github.com/dayrion/upvert/internal/fileio"
-	"github.com/dayrion/upvert/internal/gomod"
-	"github.com/dayrion/upvert/internal/project"
-	"github.com/dayrion/upvert/internal/semver"
-	"github.com/dayrion/upvert/internal/ui"
-	"github.com/dayrion/upvert/internal/vcs"
+	"github.com/cruffinoni/upvert/internal/changelog"
+	"github.com/cruffinoni/upvert/internal/ecosystem"
+	"github.com/cruffinoni/upvert/internal/fileio"
+	"github.com/cruffinoni/upvert/internal/gomod"
+	"github.com/cruffinoni/upvert/internal/project"
+	"github.com/cruffinoni/upvert/internal/semver"
+	"github.com/cruffinoni/upvert/internal/ui"
+	"github.com/cruffinoni/upvert/internal/vcs"
 )
 
 // service runs the bump pipeline for one invocation.

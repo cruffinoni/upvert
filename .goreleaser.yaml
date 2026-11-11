@@ -16,9 +16,9 @@ builds:
       - arm64
     ldflags:
       - -s -w
-      - -X github.com/dayrion/upvert/internal/buildinfo.Version={{.Version}}
-      - -X github.com/dayrion/upvert/internal/buildinfo.Commit={{.Commit}}
-      - -X github.com/dayrion/upvert/internal/buildinfo.BuiltAt={{.Date}}
+      - -X github.com/cruffinoni/upvert/internal/buildinfo.Version={{.Version}}
+      - -X github.com/cruffinoni/upvert/internal/buildinfo.Commit={{.Commit}}
+      - -X github.com/cruffinoni/upvert/internal/buildinfo.BuiltAt={{.Date}}
 
 archives:
   - id: archives

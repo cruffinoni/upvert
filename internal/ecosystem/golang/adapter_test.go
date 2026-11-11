@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/dayrion/upvert/internal/ui"
+	"github.com/cruffinoni/upvert/internal/ui"
 )
 
 // testLogger records warnings for detection assertions.

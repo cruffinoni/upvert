@@ -7,8 +7,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/dayrion/upvert/internal/buildinfo"
-	"github.com/dayrion/upvert/internal/update"
+	"github.com/cruffinoni/upvert/internal/buildinfo"
+	"github.com/cruffinoni/upvert/internal/update"
 )
 
 // pathHelp returns the PATH guidance the installers print.
