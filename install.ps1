@@ -3,11 +3,13 @@
 # Usage:
 #   irm https://raw.githubusercontent.com/dayrion/upvert/master/install.ps1 | iex
 #   .\install.ps1 -Version vX.Y.Z -BinDir C:\tools\bin
+#   .\install.ps1 -Local -BinDir C:\tools\bin
 [CmdletBinding()]
 param(
     [string]$Version,
     [string]$BinDir,
-    [switch]$NoPathUpdate
+    [switch]$NoPathUpdate,
+    [switch]$Local
 )
 
 $ErrorActionPreference = 'Stop'
@@ -20,6 +22,119 @@ $downloadUrl = "$releasesUrl/download"
 function Fail([string]$Message) {
     throw "upvert installer: $Message"
 }
+
+function Get-SourceRoot {
+    $candidates = @()
+    if (-not [string]::IsNullOrWhiteSpace($PSScriptRoot)) {
+        $candidates += $PSScriptRoot
+    }
+    $candidates += (Get-Location).Path
+    foreach ($candidate in $candidates) {
+        if ((Test-Path (Join-Path $candidate 'go.mod')) -and (Test-Path (Join-Path $candidate 'cmd\upvert'))) {
+            return $candidate
+        }
+    }
+    return $null
+}
+
+function Get-DefaultBinDir {
+    if ([string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
+        Fail 'LOCALAPPDATA is not set; pass -BinDir'
+    }
+    return (Join-Path $env:LOCALAPPDATA 'Programs\upvert')
+}
+
+function Install-LocalBuild {
+    $root = Get-SourceRoot
+    if ($null -eq $root) {
+        Fail 'could not find an upvert checkout; run this script from the repository root'
+    }
+    if ($null -eq (Get-Command go -CommandType Application -ErrorAction SilentlyContinue)) {
+        Fail 'go is required for -Local'
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($BinDir)) {
+        $targetDir = $BinDir
+        $target = Join-Path $targetDir 'upvert.exe'
+    }
+    else {
+        $command = Get-Command upvert -CommandType Application -ErrorAction SilentlyContinue
+        if ($null -eq $command) {
+            $command = Get-Command upvert.exe -CommandType Application -ErrorAction SilentlyContinue
+        }
+        if ($null -ne $command -and -not [string]::IsNullOrWhiteSpace($command.Source)) {
+            $target = $command.Source
+            $targetDir = Split-Path -Parent $target
+        }
+        else {
+            $targetDir = Get-DefaultBinDir
+            $target = Join-Path $targetDir 'upvert.exe'
+        }
+    }
+
+    if (Test-Path -LiteralPath $target -PathType Container) {
+        Fail "install target is a directory: $target"
+    }
+    New-Item -ItemType Directory -Path $targetDir -Force | Out-Null
+    $tmpBinary = Join-Path $targetDir ('.upvert-local-' + [Guid]::NewGuid().ToString('N') + '.exe')
+    $oldCgo = $env:CGO_ENABLED
+    try {
+        Push-Location $root
+        try {
+            $env:CGO_ENABLED = '0'
+            go build -trimpath -o $tmpBinary ./cmd/upvert
+            if ($LASTEXITCODE -ne 0) {
+                Fail 'go build failed'
+            }
+        }
+        finally {
+            Pop-Location
+            if ($null -eq $oldCgo) {
+                Remove-Item Env:CGO_ENABLED -ErrorAction SilentlyContinue
+            }
+            else {
+                $env:CGO_ENABLED = $oldCgo
+            }
+        }
+
+        $backup = $target + '.old'
+        Remove-Item -LiteralPath $backup -Force -ErrorAction SilentlyContinue
+        $hadTarget = Test-Path -LiteralPath $target -PathType Leaf
+        if ($hadTarget) {
+            Move-Item -LiteralPath $target -Destination $backup -Force
+        }
+        try {
+            Move-Item -LiteralPath $tmpBinary -Destination $target -Force
+        }
+        catch {
+            if ($hadTarget) {
+                Move-Item -LiteralPath $backup -Destination $target -Force -ErrorAction SilentlyContinue
+            }
+            throw
+        }
+        Remove-Item -LiteralPath $backup -Force -ErrorAction SilentlyContinue
+        $tmpBinary = $null
+        Write-Host "Installed upvert from source to $target"
+
+        $onPath = $false
+        foreach ($entry in @($env:Path -split ';')) {
+            if ($entry.TrimEnd('\') -ieq $targetDir.TrimEnd('\')) {
+                $onPath = $true
+                break
+            }
+        }
+        if (-not $onPath) {
+            Write-Host ''
+            Write-Host "Add $targetDir to your PATH to run upvert from other shells."
+        }
+    }
+    finally {
+        if ($null -ne $tmpBinary -and (Test-Path -LiteralPath $tmpBinary)) {
+            Remove-Item -LiteralPath $tmpBinary -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
 
 function Get-LatestTag {
     $headers = @{ 'User-Agent' = 'upvert-installer' }
@@ -69,6 +184,14 @@ if ($env:OS -ne 'Windows_NT') {
 
 if ($PSVersionTable.PSVersion.Major -lt 6) {
     [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+}
+
+if ($Local) {
+    if ($PSBoundParameters.ContainsKey('Version')) {
+        Fail '-Local cannot be combined with -Version'
+    }
+    Install-LocalBuild
+    exit 0
 }
 
 $arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64' -or $env:PROCESSOR_ARCHITEW6432 -eq 'ARM64') {

@@ -19,6 +19,18 @@ go build -o upvert ./cmd/upvert
 go install ./cmd/upvert
 ```
 
+Build from a checkout and replace the installed binary:
+
+```sh
+./install.sh --local
+./install.sh --local --bin-dir "$HOME/.local/bin"
+.\install.ps1 -Local
+```
+
+`--local` builds `./cmd/upvert` with Go, skips the release download and
+checksum verification, and installs over the binary found on `PATH` (or the
+default install directory). It does not modify `PATH`.
+
 Install a published release:
 
 ```sh
