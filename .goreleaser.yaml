@@ -34,7 +34,7 @@ checksum:
 
 release:
   github:
-    owner: dayrion
+    owner: cruffinoni
     name: upvert
   prerelease: auto
   make_latest: "{{ .Env.GORELEASER_MAKE_LATEST }}"
