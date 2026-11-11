@@ -95,8 +95,8 @@ Every setting is a command-line flag. The defaults are the current directory,
    greater than the latest `vX.Y.Z` tag.
 3. For `--commit` and `--push`, validates the git environment (repository,
    clean work tree, version/tag consistency) before touching any file.
-4. Updates the version declarations and prepends a dated entry to the
-   changelog.
+4. Updates the version declarations (tag-sourced projects are left untouched)
+   and prepends a dated entry to the changelog.
 5. Runs `go mod tidy` for single-language projects that have a `go.mod`.
 6. `--write` stops after the files, changelog, and hooks. `--commit` also
    creates the changed-file commit and annotated tag. `--push` also pushes
@@ -106,7 +106,7 @@ Every setting is a command-line flag. The defaults are the current directory,
 
 | Ecosystem | Detected from | Version source |
 | --- | --- | --- |
-| Go | `go.mod` | `Version = "x.y.z"` in a known version file or any `.go` file |
+| Go | `go.mod` | `Version = "x.y.z"` in a known version file or any `.go` file; git tags when no static declaration exists |
 | Rust | `Cargo.toml` with `[package]` | `[package].version` |
 | Python | `pyproject.toml`, `setup.cfg`, `setup.py` | packaging metadata, plus in-code `__version__` / `VERSION` attributes |
 | Node.js | `package.json` | top-level `version` field (no `jq` required) |
@@ -118,6 +118,12 @@ version. Every discovered declaration is synchronized, including
 modules. Generated trees such as `.git`, `node_modules`, `vendor`, `venv`,
 `build`, `dist`, and `*.egg-info` are ignored. An untagged multi-language
 repository starts from `0.0.0`, so the first `patch` bump produces `0.0.1`.
+
+Go projects without a static semantic `Version` declaration — common when
+GoReleaser injects the version with `-ldflags -X` — use git tags as the version
+source. `--write` is rejected for these projects because it would not create
+the tag; use `--commit` or `--push`. Add a supported static declaration, or
+point `--version-file` at a supported file, to opt into file updates.
 
 ### Pre-releases
 
@@ -160,9 +166,10 @@ messages. The intentional differences are:
 - **Go version declarations are resolved with `go/ast`.** The version may be a
   literal or a same-file variable reference; the literal is updated in place and
   indirection is reported. Multiple semantic-version declarations in one file are
-  rejected, and declarations marked as build-injected (Go directives such as
-  `//go:embed`, `-ldflags`, or notes like "injected at build time") are reported
-  as errors. Unparseable Go files are skipped with a warning during detection.
+  rejected. Declarations marked as build-injected (Go directives such as
+  `//go:embed`, `-ldflags`, or notes like "injected at build time") cause the
+  project to use git tags instead of being edited. Unparseable Go files are
+  skipped with a warning during detection.
 - **Colour is opt-in by terminal.** ANSI colours are used only when stderr is a
   terminal, `TERM` is not `dumb`, and `NO_COLOR` is unset.
 - **No configuration files or environment overrides.** Every setting is a
@@ -175,6 +182,8 @@ Preserved quirks worth knowing:
 - Multi-language repositories use tags, not file contents, as the version
   source; file values are overwritten on the next bump. `--write` is rejected
   for these projects because it would leave the tag behind.
+- Go projects without a static version declaration also use tags, so
+  `--write` is rejected there for the same reason.
 - Rollback requires `--apply` and runs `git reset --hard HEAD~1`; uncommitted
   work is discarded. The command warns when a force push may be needed.
 

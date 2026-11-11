@@ -113,6 +113,23 @@ func TestDetectExplicitVersionFile(t *testing.T) {
 	}
 }
 
+func TestDetectGoWithoutVersionUsesTags(t *testing.T) {
+	dir := t.TempDir()
+	writeProjectFile(t, dir, "go.mod", "module example.com/demo\n")
+	writeProjectFile(t, dir, "version.go", "package demo\n\nvar version = \"dev\"\n")
+
+	proj, err := NewDetector(nil).Detect(dir, "")
+	if err != nil {
+		t.Fatalf("Detect: %v", err)
+	}
+	if proj.Kind != ecosystem.Go || !proj.UsesTags() {
+		t.Fatalf("detected %s with UsesTags=%v, want a tag-sourced Go project", proj.Kind, proj.UsesTags())
+	}
+	if len(proj.Files()) != 0 {
+		t.Fatalf("version files = %v, want none", proj.Files())
+	}
+}
+
 func TestDetectMultiLanguageProject(t *testing.T) {
 	dir := t.TempDir()
 	writeProjectFile(t, dir, "go.mod", "module example.com/demo\n")

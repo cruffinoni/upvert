@@ -132,7 +132,16 @@ func checkInjection(object *ast.Object, ctx parseContext) error {
 	}
 	groups := append([]*ast.CommentGroup(nil), ctx.comments[decl]...)
 	if spec, ok := decl.(*ast.ValueSpec); ok {
+		if spec.Doc != nil {
+			groups = append(groups, spec.Doc)
+		}
+		if spec.Comment != nil {
+			groups = append(groups, spec.Comment)
+		}
 		if gen := ctx.decls[spec]; gen != nil {
+			if gen.Doc != nil {
+				groups = append(groups, gen.Doc)
+			}
 			groups = append(groups, ctx.comments[gen]...)
 		}
 	}

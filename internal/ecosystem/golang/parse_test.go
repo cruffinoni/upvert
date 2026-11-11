@@ -72,6 +72,14 @@ func TestParseGoVersionAllowsNormalTrailingComment(t *testing.T) {
 	}
 }
 
+func TestParseGoVersionRejectsDirectTrailingInjectionComment(t *testing.T) {
+	content := "package demo\n\nconst Version = \"1.0.0\" // set via -ldflags\n"
+	_, err := parseDeclaration("version.go", []byte(content))
+	if !errors.Is(err, errVersionInjected) {
+		t.Fatalf("error = %v, want errVersionInjected", err)
+	}
+}
+
 func TestParseGoVersionRejectsTrailingInjectionComment(t *testing.T) {
 	content := "package demo\n\nvar buildVersion = \"1.0.0\" // set via -ldflags\nconst Version = buildVersion\n"
 	_, err := parseDeclaration("version.go", []byte(content))

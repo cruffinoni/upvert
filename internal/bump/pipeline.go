@@ -29,7 +29,7 @@ type service struct {
 // project when version attributes are disabled. The primary version source is
 // kept for reading.
 func (s *service) applyNoVersionAttr() {
-	if !s.cfg.NoVersionAttr || s.proj.IsMulti() {
+	if !s.cfg.NoVersionAttr || s.proj.UsesTags() {
 		return
 	}
 	for i := range s.proj.Parts {
@@ -76,7 +76,7 @@ func (s *service) writableFiles(files []ecosystem.File) []ecosystem.File {
 
 // currentVersion reads the version from the project-appropriate source.
 func (s *service) currentVersion(ctx context.Context) (string, error) {
-	if s.proj.IsMulti() {
+	if s.proj.UsesTags() {
 		return s.git.VersionFromTags(ctx)
 	}
 	if len(s.proj.Parts) == 0 || len(s.proj.Parts[0].Target.Files) == 0 {
@@ -246,6 +246,9 @@ func (s *service) updateVersionFiles(ctx context.Context, version string, dryRun
 	if s.proj.IsMulti() {
 		return s.syncMultiFiles(version)
 	}
+	if s.proj.UsesTags() {
+		return nil
+	}
 	return s.writeSingleVersion(ctx, version)
 }
 
@@ -266,11 +269,15 @@ func (s *service) run(ctx context.Context, kind semver.Kind) error {
 		return err
 	}
 	s.proj = proj
-	if proj.IsMulti() && s.cfg.Mode == ModeWrite {
-		return fmt.Errorf("multi-language projects require a tag; use --commit or --push")
+	if proj.UsesTags() && s.cfg.Mode == ModeWrite {
+		kind := "tag-sourced"
+		if proj.IsMulti() {
+			kind = "multi-language"
+		}
+		return fmt.Errorf("%s projects require a tag; use --commit or --push", kind)
 	}
 	s.applyNoVersionAttr()
-	if s.cfg.NoVersionAttr && !s.hasWritableVersion() {
+	if !s.proj.UsesTags() && s.cfg.NoVersionAttr && !s.hasWritableVersion() {
 		return fmt.Errorf("--no-version-attr leaves no writable version declaration")
 	}
 	current, err := s.currentVersion(ctx)

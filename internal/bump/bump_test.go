@@ -56,6 +56,48 @@ func TestBumpDryRunLeavesRepositoryUntouched(t *testing.T) {
 	}
 }
 
+func TestBumpGoWithoutVersionUsesTags(t *testing.T) {
+	dir := initTestRepo(t, map[string]string{
+		"go.mod":  "module example.com/demo\n\ngo 1.27\n",
+		"main.go": "package main\n\nvar version = \"dev\"\n\nfunc main() {}\n",
+	})
+	if err := Apply(t.Context(), Config{Dir: dir, Mode: ModeCommit}, Patch); err != nil {
+		t.Fatalf("Bump: %v", err)
+	}
+	if source := readTestFile(t, filepath.Join(dir, "main.go")); !strings.Contains(source, "var version = \"dev\"") {
+		t.Fatalf("tag-sourced bump modified main.go:\n%s", source)
+	}
+	if changelog := readTestFile(t, filepath.Join(dir, "CHANGELOG.md")); !strings.Contains(changelog, "## [0.0.1]") {
+		t.Fatalf("changelog was not updated:\n%s", changelog)
+	}
+	if tags := gitRun(t, dir, "tag"); tags != "v0.0.1" {
+		t.Fatalf("tags = %q, want v0.0.1", tags)
+	}
+	if err := Apply(t.Context(), Config{Dir: dir, Mode: ModeCommit}, Patch); err != nil {
+		t.Fatalf("second Bump: %v", err)
+	}
+	if tags := gitRun(t, dir, "tag"); !strings.Contains(tags, "v0.0.2") {
+		t.Fatalf("tags = %q, want v0.0.2", tags)
+	}
+}
+
+func TestBumpGoTagSourceWriteIsRejected(t *testing.T) {
+	dir := initTestRepo(t, map[string]string{
+		"go.mod":  "module example.com/demo\n\ngo 1.27\n",
+		"main.go": "package main\n\nvar version = \"dev\"\n\nfunc main() {}\n",
+	})
+	err := Apply(t.Context(), Config{Dir: dir, Mode: ModeWrite}, Patch)
+	if err == nil || !strings.Contains(err.Error(), "tag-sourced projects require a tag") {
+		t.Fatalf("error = %v, want a tag-source error", err)
+	}
+	if source := readTestFile(t, filepath.Join(dir, "main.go")); !strings.Contains(source, "var version = \"dev\"") {
+		t.Fatalf("rejected write modified main.go:\n%s", source)
+	}
+	if tags := gitRun(t, dir, "tag"); tags != "" {
+		t.Fatalf("rejected write created tags: %q", tags)
+	}
+}
+
 func TestBumpWriteLeavesGitUntouched(t *testing.T) {
 	dir := initTestRepo(t, map[string]string{
 		"package.json": "{\"name\":\"demo\",\"version\":\"1.2.3\"}\n",

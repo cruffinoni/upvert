@@ -20,14 +20,18 @@ func (s *service) printSummary(current, next string, kind semver.Kind, latest st
 	_, _ = fmt.Fprintln(out, "  Summary")
 	_, _ = fmt.Fprintln(out, "─────────────────────────────────────────────")
 	row("Project type:", string(s.proj.Kind))
-	if s.proj.IsMulti() {
-		files := s.proj.Files()
-		paths := make([]string, len(files))
-		for i, file := range files {
-			paths[i] = file.Path
-		}
+	if s.proj.UsesTags() {
 		row("Version source:", "Git tags (vX.Y.Z)")
-		row("Version files:", strings.Join(paths, ", "))
+		files := s.proj.Files()
+		if len(files) == 0 {
+			row("Version files:", "none")
+		} else {
+			paths := make([]string, len(files))
+			for i, file := range files {
+				paths[i] = file.Path
+			}
+			row("Version files:", strings.Join(paths, ", "))
+		}
 	} else {
 		row("Version file:", s.proj.Primary().Path)
 	}

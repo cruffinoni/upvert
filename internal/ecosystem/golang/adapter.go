@@ -93,6 +93,9 @@ func (a *Adapter) Detect(root string, files []string, log ecosystem.Logger) (*ec
 		}
 		found, err := inspectFile(candidate, content, log)
 		if err != nil {
+			if errors.Is(err, errVersionInjected) {
+				continue
+			}
 			return nil, false, err
 		}
 		if found != nil {
@@ -109,13 +112,19 @@ func (a *Adapter) Detect(root string, files []string, log ecosystem.Logger) (*ec
 		}
 		found, err := inspectFile(rel, content, log)
 		if err != nil {
+			if errors.Is(err, errVersionInjected) {
+				continue
+			}
 			return nil, false, err
 		}
 		if found != nil {
 			return detectedTarget(rel), true, nil
 		}
 	}
-	return nil, false, errors.New("go project detected but no version constant found; use --version-file to specify it")
+	if log != nil {
+		log.Warnf("No static semantic version declaration found in Go sources; using git tags")
+	}
+	return &ecosystem.Target{Kind: ecosystem.Go, Single: true, TagSource: true}, true, nil
 }
 
 // Scan collects the Go version declarations from the project snapshot.
@@ -138,6 +147,9 @@ func (a *Adapter) Scan(root string, files []string, log ecosystem.Logger) (*ecos
 		}
 		found, err := inspectFile(rel, content, log)
 		if err != nil {
+			if errors.Is(err, errVersionInjected) {
+				continue
+			}
 			return nil, false, err
 		}
 		if found == nil {

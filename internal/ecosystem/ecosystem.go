@@ -31,6 +31,8 @@ type Target struct {
 	Single bool
 	// Files lists the version-bearing files in report and write order.
 	Files []File
+	// TagSource reports that the version comes from git tags rather than Files.
+	TagSource bool
 }
 
 // Logger is the narrow logging surface used by language adapters.

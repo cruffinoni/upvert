@@ -87,7 +87,7 @@ func (s *service) validateEnvironment(ctx context.Context, version string) error
 	if s.cfg.Mode == ModePush && !s.git.RemoteExists(ctx, "origin") {
 		return fmt.Errorf("no origin remote configured; cannot push")
 	}
-	if !s.proj.IsMulti() {
+	if !s.proj.UsesTags() {
 		primary := s.proj.Primary()
 		if !fileio.Exists(fileio.Resolve(s.root, primary.Path)) {
 			return fmt.Errorf("version file not found: %s", primary.Path)

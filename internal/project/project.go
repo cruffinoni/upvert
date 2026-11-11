@@ -27,6 +27,19 @@ func (p *Layout) IsMulti() bool {
 	return p.Kind == ecosystem.Multi
 }
 
+// UsesTags reports whether the project reads its version from git tags.
+func (p *Layout) UsesTags() bool {
+	if p.IsMulti() {
+		return true
+	}
+	for _, part := range p.Parts {
+		if part.Target.TagSource {
+			return true
+		}
+	}
+	return false
+}
+
 // Files returns every version-bearing file in report and stage order.
 func (p *Layout) Files() []ecosystem.File {
 	var files []ecosystem.File

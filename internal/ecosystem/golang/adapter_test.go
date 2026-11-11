@@ -106,6 +106,38 @@ func TestDetectGoProjectSkipsUnparseableFiles(t *testing.T) {
 	}
 }
 
+func TestDetectGoProjectWithoutVersionUsesTags(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "go.mod", "module example.com/demo\n")
+	writeFile(t, dir, "version.go", "package demo\n\nvar version = \"dev\"\n")
+
+	log := &testLogger{}
+	target, found, err := New().Detect(dir, []string{"go.mod", "version.go"}, log)
+	if err != nil {
+		t.Fatalf("Detect: %v", err)
+	}
+	if !found || !target.TagSource || len(target.Files) != 0 {
+		t.Fatalf("target = %+v, want a tag-sourced Go project", target)
+	}
+	if len(log.warnings) == 0 || !strings.Contains(log.warnings[0], "using git tags") {
+		t.Fatalf("warnings = %v, want a tag-source warning", log.warnings)
+	}
+}
+
+func TestDetectGoProjectWithInjectedVersionUsesTags(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "go.mod", "module example.com/demo\n")
+	writeFile(t, dir, "version.go", "package demo\n\nconst Version = \"1.0.0\" // set via -ldflags\n")
+
+	target, found, err := New().Detect(dir, []string{"go.mod", "version.go"}, &testLogger{})
+	if err != nil {
+		t.Fatalf("Detect: %v", err)
+	}
+	if !found || !target.TagSource || len(target.Files) != 0 {
+		t.Fatalf("target = %+v, want a tag-sourced Go project", target)
+	}
+}
+
 func TestDetectGoProjectRejectsMultipleSemver(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "go.mod", "module example.com/demo\n")
