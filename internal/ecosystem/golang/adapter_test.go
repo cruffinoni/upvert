@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/dayrion/upvert/internal/ui"
 )
@@ -29,21 +31,15 @@ func (l *testLogger) Warnf(format string, args ...any) {
 func writeFile(t *testing.T, dir, name, content string) {
 	t.Helper()
 	path := filepath.Join(dir, filepath.FromSlash(name))
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatalf("create directories for %s: %v", name, err)
-	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatalf("write %s: %v", name, err)
-	}
+	require.NoErrorf(t, os.MkdirAll(filepath.Dir(path), 0o755), "create directories for %s", name)
+	require.NoErrorf(t, os.WriteFile(path, []byte(content), 0o644), "write %s", name)
 }
 
 // readFile returns the content of path.
 func readFile(t *testing.T, path string) string {
 	t.Helper()
 	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read %s: %v", path, err)
-	}
+	require.NoErrorf(t, err, "read %s", path)
 	return string(data)
 }
 
@@ -54,22 +50,12 @@ func TestWriteGoVersionFileIndirect(t *testing.T) {
 
 	var output bytes.Buffer
 	changed, err := writeVersionFile(path, "1.1.0", ui.New(&output, false))
-	if err != nil {
-		t.Fatalf("writeVersionFile: %v", err)
-	}
-	if !changed {
-		t.Fatal("expected the file to change")
-	}
+	require.NoError(t, err)
+	assert.True(t, changed)
 	got := readFile(t, path)
-	if !strings.Contains(got, "var buildVersion = \"1.1.0\"") {
-		t.Fatalf("variable was not updated:\n%s", got)
-	}
-	if !strings.Contains(got, "const Version = buildVersion") {
-		t.Fatalf("reference was changed:\n%s", got)
-	}
-	if !strings.Contains(output.String(), "buildVersion") {
-		t.Fatalf("indirection was not reported: %q", output.String())
-	}
+	assert.Contains(t, got, "var buildVersion = \"1.1.0\"")
+	assert.Contains(t, got, "const Version = buildVersion")
+	assert.Contains(t, output.String(), "buildVersion")
 }
 
 func TestWriteGoVersionFile(t *testing.T) {
@@ -77,13 +63,10 @@ func TestWriteGoVersionFile(t *testing.T) {
 	path := filepath.Join(dir, "version.go")
 	writeFile(t, dir, "version.go", "package demo\n\nconst Version = \"1.0.0\"\n")
 
-	if _, err := writeVersionFile(path, "1.1.0", nil); err != nil {
-		t.Fatalf("writeVersionFile: %v", err)
-	}
+	_, err := writeVersionFile(path, "1.1.0", nil)
+	require.NoError(t, err)
 	want := "package demo\n\nconst Version = \"1.1.0\"\n"
-	if got := readFile(t, path); got != want {
-		t.Fatalf("content = %q, want %q", got, want)
-	}
+	assert.Equal(t, want, readFile(t, path))
 }
 
 func TestDetectGoProjectSkipsUnparseableFiles(t *testing.T) {
@@ -95,15 +78,12 @@ func TestDetectGoProjectSkipsUnparseableFiles(t *testing.T) {
 	log := &testLogger{}
 	adapter := New()
 	target, found, err := adapter.Detect(dir, []string{"go.mod", "bad.go", "version.go"}, log)
-	if err != nil {
-		t.Fatalf("Detect: %v", err)
-	}
-	if !found || target.Files[0].Path != "version.go" {
-		t.Fatalf("target = %+v, want version.go", target)
-	}
-	if len(log.warnings) == 0 || !strings.Contains(log.warnings[0], "bad.go") {
-		t.Fatalf("warnings = %v, want one mentioning bad.go", log.warnings)
-	}
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Len(t, target.Files, 1)
+	assert.Equal(t, "version.go", target.Files[0].Path)
+	require.NotEmpty(t, log.warnings)
+	assert.Contains(t, log.warnings[0], "bad.go")
 }
 
 func TestDetectGoProjectWithoutVersionUsesTags(t *testing.T) {
@@ -113,15 +93,12 @@ func TestDetectGoProjectWithoutVersionUsesTags(t *testing.T) {
 
 	log := &testLogger{}
 	target, found, err := New().Detect(dir, []string{"go.mod", "version.go"}, log)
-	if err != nil {
-		t.Fatalf("Detect: %v", err)
-	}
-	if !found || !target.TagSource || len(target.Files) != 0 {
-		t.Fatalf("target = %+v, want a tag-sourced Go project", target)
-	}
-	if len(log.warnings) == 0 || !strings.Contains(log.warnings[0], "using git tags") {
-		t.Fatalf("warnings = %v, want a tag-source warning", log.warnings)
-	}
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.True(t, target.TagSource)
+	assert.Empty(t, target.Files)
+	require.NotEmpty(t, log.warnings)
+	assert.Contains(t, log.warnings[0], "using git tags")
 }
 
 func TestDetectGoProjectWithInjectedVersionUsesTags(t *testing.T) {
@@ -130,12 +107,10 @@ func TestDetectGoProjectWithInjectedVersionUsesTags(t *testing.T) {
 	writeFile(t, dir, "version.go", "package demo\n\nconst Version = \"1.0.0\" // set via -ldflags\n")
 
 	target, found, err := New().Detect(dir, []string{"go.mod", "version.go"}, &testLogger{})
-	if err != nil {
-		t.Fatalf("Detect: %v", err)
-	}
-	if !found || !target.TagSource || len(target.Files) != 0 {
-		t.Fatalf("target = %+v, want a tag-sourced Go project", target)
-	}
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.True(t, target.TagSource)
+	assert.Empty(t, target.Files)
 }
 
 func TestDetectGoProjectRejectsMultipleSemver(t *testing.T) {
@@ -144,7 +119,6 @@ func TestDetectGoProjectRejectsMultipleSemver(t *testing.T) {
 	writeFile(t, dir, "version.go", "package demo\n\nconst Version = \"1.0.0\"\n\nfunc other() {\n\tconst Version = \"1.0.1\"\n}\n")
 
 	_, _, err := New().Detect(dir, []string{"go.mod", "version.go"}, &testLogger{})
-	if !errors.Is(err, errVersionAmbiguous) {
-		t.Fatalf("error = %v, want errVersionAmbiguous", err)
-	}
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, errVersionAmbiguous))
 }

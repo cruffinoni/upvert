@@ -6,6 +6,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/dayrion/upvert/internal/ecosystem"
 )
 
@@ -26,12 +29,8 @@ func (l *captureLogger) Warnf(format string, args ...any) {
 func writeProjectFile(t *testing.T, dir, name, content string) {
 	t.Helper()
 	path := filepath.Join(dir, filepath.FromSlash(name))
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatalf("create directories for %s: %v", name, err)
-	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatalf("write %s: %v", name, err)
-	}
+	require.NoErrorf(t, os.MkdirAll(filepath.Dir(path), 0o755), "create directories for %s", name)
+	require.NoErrorf(t, os.WriteFile(path, []byte(content), 0o644), "write %s", name)
 }
 
 func TestDetectProject(t *testing.T) {
@@ -86,17 +85,12 @@ func TestDetectProject(t *testing.T) {
 			}
 			proj, err := NewDetector(nil).Detect(dir, "")
 			if tt.wantError {
-				if err == nil {
-					t.Fatal("expected an error")
-				}
+				require.Error(t, err)
 				return
 			}
-			if err != nil {
-				t.Fatalf("Detect: %v", err)
-			}
-			if proj.Kind != tt.wantKind || proj.Primary().Path != tt.wantFile {
-				t.Fatalf("detected %s in %s, want %s in %s", proj.Kind, proj.Primary().Path, tt.wantKind, tt.wantFile)
-			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantKind, proj.Kind)
+			assert.Equal(t, tt.wantFile, proj.Primary().Path)
 		})
 	}
 }
@@ -105,12 +99,9 @@ func TestDetectExplicitVersionFile(t *testing.T) {
 	dir := t.TempDir()
 	writeProjectFile(t, dir, "custom.json", "{\"version\":\"2.0.0\"}")
 	proj, err := NewDetector(nil).Detect(dir, "custom.json")
-	if err != nil {
-		t.Fatalf("Detect: %v", err)
-	}
-	if proj.Kind != ecosystem.Node || proj.Primary().Path != "custom.json" {
-		t.Fatalf("detected %s in %s, want node in custom.json", proj.Kind, proj.Primary().Path)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, ecosystem.Node, proj.Kind)
+	assert.Equal(t, "custom.json", proj.Primary().Path)
 }
 
 func TestDetectGoWithoutVersionUsesTags(t *testing.T) {
@@ -119,15 +110,10 @@ func TestDetectGoWithoutVersionUsesTags(t *testing.T) {
 	writeProjectFile(t, dir, "version.go", "package demo\n\nvar version = \"dev\"\n")
 
 	proj, err := NewDetector(nil).Detect(dir, "")
-	if err != nil {
-		t.Fatalf("Detect: %v", err)
-	}
-	if proj.Kind != ecosystem.Go || !proj.UsesTags() {
-		t.Fatalf("detected %s with UsesTags=%v, want a tag-sourced Go project", proj.Kind, proj.UsesTags())
-	}
-	if len(proj.Files()) != 0 {
-		t.Fatalf("version files = %v, want none", proj.Files())
-	}
+	require.NoError(t, err)
+	assert.Equal(t, ecosystem.Go, proj.Kind)
+	assert.True(t, proj.UsesTags())
+	assert.Empty(t, proj.Files())
 }
 
 func TestDetectMultiLanguageProject(t *testing.T) {
@@ -140,21 +126,13 @@ func TestDetectMultiLanguageProject(t *testing.T) {
 	writeProjectFile(t, dir, "pyproject.toml", "[project]\nname = \"demo\"\nversion = \"1.2.3\"\n")
 
 	proj, err := NewDetector(nil).Detect(dir, "")
-	if err != nil {
-		t.Fatalf("Detect: %v", err)
-	}
-	if proj.Kind != ecosystem.Multi {
-		t.Fatalf("detected %s, want multi", proj.Kind)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, ecosystem.Multi, proj.Kind)
 	files := proj.Files()
 	want := []string{"package.json", "package-lock.json", "pyproject.toml", "pkg/__init__.py", "version.go"}
-	if len(files) != len(want) {
-		t.Fatalf("version files = %v, want %v", files, want)
-	}
+	require.Len(t, files, len(want))
 	for i := range want {
-		if files[i].Path != want[i] {
-			t.Fatalf("version files = %v, want %v", files, want)
-		}
+		assert.Equal(t, want[i], files[i].Path)
 	}
 }
 
@@ -165,12 +143,8 @@ func TestDetectSkipsGeneratedDirectories(t *testing.T) {
 	writeProjectFile(t, dir, "node_modules/pkg/package.json", "{\"version\":\"9.9.9\"}")
 
 	proj, err := NewDetector(nil).Detect(dir, "")
-	if err != nil {
-		t.Fatalf("Detect: %v", err)
-	}
-	if proj.Kind != ecosystem.Go {
-		t.Fatalf("detected %s, want go: generated directories must be pruned", proj.Kind)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, ecosystem.Go, proj.Kind)
 }
 
 func TestDetectPythonModules(t *testing.T) {
@@ -180,18 +154,12 @@ func TestDetectPythonModules(t *testing.T) {
 	writeProjectFile(t, dir, "node_modules/pkg/index.py", "__version__ = \"9.9.9\"\n")
 
 	proj, err := NewDetector(nil).Detect(dir, "")
-	if err != nil {
-		t.Fatalf("Detect: %v", err)
-	}
+	require.NoError(t, err)
 	files := proj.Files()
 	want := []string{"pyproject.toml", "src/pkg/__init__.py"}
-	if len(files) != len(want) {
-		t.Fatalf("version files = %v, want %v", files, want)
-	}
+	require.Len(t, files, len(want))
 	for i := range want {
-		if files[i].Path != want[i] {
-			t.Fatalf("version files = %v, want %v", files, want)
-		}
+		assert.Equal(t, want[i], files[i].Path)
 	}
 }
 
@@ -199,16 +167,12 @@ func TestListProjectFilesReportsRelativePaths(t *testing.T) {
 	dir := t.TempDir()
 	writeProjectFile(t, dir, "a/b/c.txt", "content")
 	files, err := listFiles(dir)
-	if err != nil {
-		t.Fatalf("listFiles: %v", err)
-	}
+	require.NoError(t, err)
 	want := filepath.ToSlash(filepath.Join("a", "b", "c.txt"))
-	if len(files) != 1 || files[0] != want {
-		t.Fatalf("files = %v, want [%s]", files, want)
-	}
-	if _, err := os.Stat(filepath.Join(dir, want)); err != nil {
-		t.Fatalf("reported path does not exist: %v", err)
-	}
+	require.Len(t, files, 1)
+	assert.Equal(t, want, files[0])
+	_, err = os.Stat(filepath.Join(dir, want))
+	assert.NoError(t, err)
 }
 
 func TestDetectExplicitPythonModuleMarksInCode(t *testing.T) {
@@ -216,31 +180,24 @@ func TestDetectExplicitPythonModuleMarksInCode(t *testing.T) {
 	writeProjectFile(t, dir, "src/pkg/__init__.py", "__version__ = \"1.0.0\"\n")
 
 	proj, err := NewDetector(nil).Detect(dir, "src/pkg/__init__.py")
-	if err != nil {
-		t.Fatalf("Detect: %v", err)
-	}
+	require.NoError(t, err)
 	files := proj.Files()
-	if len(files) != 1 || files[0].Path != "src/pkg/__init__.py" || !files[0].InCode {
-		t.Fatalf("files = %v, want one in-code Python module", files)
-	}
+	require.Len(t, files, 1)
+	assert.Equal(t, "src/pkg/__init__.py", files[0].Path)
+	assert.True(t, files[0].InCode)
 }
+
 func TestDetectExplicitPythonProjectIncludesModules(t *testing.T) {
 	dir := t.TempDir()
 	writeProjectFile(t, dir, "pyproject.toml", "[project]\nversion = \"1.0.0\"\n")
 	writeProjectFile(t, dir, "src/pkg/__init__.py", "__version__ = \"1.0.0\"\n")
 
 	proj, err := NewDetector(nil).Detect(dir, "pyproject.toml")
-	if err != nil {
-		t.Fatalf("Detect: %v", err)
-	}
+	require.NoError(t, err)
 	files := proj.Files()
 	want := []string{"pyproject.toml", "src/pkg/__init__.py"}
-	if len(files) != len(want) {
-		t.Fatalf("version files = %v, want %v", files, want)
-	}
+	require.Len(t, files, len(want))
 	for i := range want {
-		if files[i].Path != want[i] {
-			t.Fatalf("version files = %v, want %v", files, want)
-		}
+		assert.Equal(t, want[i], files[i].Path)
 	}
 }

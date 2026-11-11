@@ -2,34 +2,28 @@ package ui
 
 import (
 	"bytes"
-	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestLoggerColorizesWhenEnabled(t *testing.T) {
 	var buf bytes.Buffer
 	New(&buf, true).Infof("hello %s", "world")
 	got := buf.String()
-	if !strings.Contains(got, "\033[34m") || !strings.Contains(got, "hello world") {
-		t.Fatalf("coloured output = %q", got)
-	}
+	assert.Contains(t, got, "\033[34m")
+	assert.Contains(t, got, "hello world")
 }
 
 func TestLoggerWritesPlainTextWhenDisabled(t *testing.T) {
 	var buf bytes.Buffer
 	New(&buf, false).Successf("done")
 	got := buf.String()
-	if strings.Contains(got, "\033[") {
-		t.Fatalf("plain output contains escape codes: %q", got)
-	}
-	if !strings.Contains(got, "[SUCCESS] done") {
-		t.Fatalf("plain output = %q", got)
-	}
+	assert.NotContains(t, got, "\033[")
+	assert.Contains(t, got, "[SUCCESS] done")
 }
 
 func TestColorEnabledRejectsNonTerminal(t *testing.T) {
 	var buf bytes.Buffer
-	if ColorEnabled(&buf) {
-		t.Fatal("colours must be disabled for non-file writers")
-	}
+	assert.False(t, ColorEnabled(&buf))
 }

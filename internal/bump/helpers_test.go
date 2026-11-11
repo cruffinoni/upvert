@@ -6,27 +6,23 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 // writeTestFile creates a file and any parent directories below dir.
 func writeTestFile(t *testing.T, dir, name, content string) {
 	t.Helper()
 	path := filepath.Join(dir, filepath.FromSlash(name))
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatalf("create directories for %s: %v", name, err)
-	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatalf("write %s: %v", name, err)
-	}
+	require.NoErrorf(t, os.MkdirAll(filepath.Dir(path), 0o755), "create directories for %s", name)
+	require.NoErrorf(t, os.WriteFile(path, []byte(content), 0o644), "write %s", name)
 }
 
 // readTestFile returns the content of path.
 func readTestFile(t *testing.T, path string) string {
 	t.Helper()
 	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read %s: %v", path, err)
-	}
+	require.NoErrorf(t, err, "read %s", path)
 	return string(data)
 }
 
@@ -35,9 +31,7 @@ func gitRun(t *testing.T, dir string, args ...string) string {
 	t.Helper()
 	command := exec.Command("git", append([]string{"-C", dir}, args...)...)
 	output, err := command.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, output)
-	}
+	require.NoErrorf(t, err, "git %s:\n%s", strings.Join(args, " "), output)
 	return strings.TrimSpace(string(output))
 }
 

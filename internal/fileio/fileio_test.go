@@ -5,44 +5,31 @@ import (
 	"path/filepath"
 	"regexp"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestUpdateReportsChanges(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "version.txt")
-	if err := os.WriteFile(path, []byte("1.0.0"), 0o644); err != nil {
-		t.Fatalf("write version.txt: %v", err)
-	}
+	require.NoError(t, os.WriteFile(path, []byte("1.0.0"), 0o644))
 	changed, err := Update(path, func([]byte) ([]byte, error) {
 		return []byte("1.1.0"), nil
 	})
-	if err != nil {
-		t.Fatalf("Update: %v", err)
-	}
-	if !changed {
-		t.Fatal("expected the file to change")
-	}
+	require.NoError(t, err)
+	assert.True(t, changed)
 	changed, err = Update(path, func(data []byte) ([]byte, error) {
 		return data, nil
 	})
-	if err != nil {
-		t.Fatalf("Update: %v", err)
-	}
-	if changed {
-		t.Fatal("expected no change")
-	}
+	require.NoError(t, err)
+	assert.False(t, changed)
 }
 
 func TestReplaceLinesAndQuoteLike(t *testing.T) {
 	content := "version = 1.0.0\nother = 2.0.0\n"
 	got := ReplaceLines(content, regexp.MustCompile("^version = .*$"), "version = 1.1.0")
 	want := "version = 1.1.0\nother = 2.0.0\n"
-	if got != want {
-		t.Fatalf("ReplaceLines = %q, want %q", got, want)
-	}
-	if quoted := QuoteLike("\"1.0.0\"", "1.1.0"); quoted != "\"1.1.0\"" {
-		t.Fatalf("QuoteLike = %q, want quoted value", quoted)
-	}
-	if quoted := QuoteLike("1.0.0", "1.1.0"); quoted != "1.1.0" {
-		t.Fatalf("QuoteLike = %q, want unquoted value", quoted)
-	}
+	assert.Equal(t, want, got)
+	assert.Equal(t, "\"1.1.0\"", QuoteLike("\"1.0.0\"", "1.1.0"))
+	assert.Equal(t, "1.1.0", QuoteLike("1.0.0", "1.1.0"))
 }

@@ -7,15 +7,16 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/dayrion/upvert/internal/buildinfo"
 )
 
 func writeProjectFile(t *testing.T, dir, name, content string) {
 	t.Helper()
 	path := filepath.Join(dir, name)
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatalf("write %s: %v", name, err)
-	}
+	require.NoErrorf(t, os.WriteFile(path, []byte(content), 0o644), "write %s", name)
 }
 
 func TestCLIDryRun(t *testing.T) {
@@ -27,22 +28,12 @@ func TestCLIDryRun(t *testing.T) {
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&stderr)
 	cmd.SetArgs([]string{"patch", "--dir", dir})
-	if err := cmd.ExecuteContext(t.Context()); err != nil {
-		t.Fatalf("execute: %v\n%s", err, stderr.String())
-	}
-	if !strings.Contains(stdout.String(), "Summary") {
-		t.Fatalf("missing preview summary:\n%s", stdout.String())
-	}
-	if !strings.Contains(stdout.String(), "1.0.1") {
-		t.Fatalf("missing new version in summary:\n%s", stdout.String())
-	}
+	require.NoErrorf(t, cmd.ExecuteContext(t.Context()), "execute:\n%s", stderr.String())
+	assert.Contains(t, stdout.String(), "Summary")
+	assert.Contains(t, stdout.String(), "1.0.1")
 	manifest, err := os.ReadFile(filepath.Join(dir, "package.json"))
-	if err != nil {
-		t.Fatalf("read package.json: %v", err)
-	}
-	if !strings.Contains(string(manifest), "1.0.0") {
-		t.Fatalf("preview modified package.json: %s", manifest)
-	}
+	require.NoError(t, err)
+	assert.Contains(t, string(manifest), "1.0.0")
 }
 
 func TestCLIWriteUpdatesFilesOnly(t *testing.T) {
@@ -54,19 +45,12 @@ func TestCLIWriteUpdatesFilesOnly(t *testing.T) {
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&stderr)
 	cmd.SetArgs([]string{"patch", "--dir", dir, "--write"})
-	if err := cmd.ExecuteContext(t.Context()); err != nil {
-		t.Fatalf("execute: %v\n%s", err, stderr.String())
-	}
+	require.NoErrorf(t, cmd.ExecuteContext(t.Context()), "execute:\n%s", stderr.String())
 	manifest, err := os.ReadFile(filepath.Join(dir, "package.json"))
-	if err != nil {
-		t.Fatalf("read package.json: %v", err)
-	}
-	if !strings.Contains(string(manifest), "1.0.1") {
-		t.Fatalf("--write did not update package.json: %s", manifest)
-	}
-	if _, err := os.Stat(filepath.Join(dir, "CHANGELOG.md")); err != nil {
-		t.Fatalf("--write did not create a changelog: %v", err)
-	}
+	require.NoError(t, err)
+	assert.Contains(t, string(manifest), "1.0.1")
+	_, err = os.Stat(filepath.Join(dir, "CHANGELOG.md"))
+	assert.NoError(t, err)
 }
 
 func TestCLIRejectsMultipleActions(t *testing.T) {
@@ -78,16 +62,11 @@ func TestCLIRejectsMultipleActions(t *testing.T) {
 	cmd.SetErr(&bytes.Buffer{})
 	cmd.SetArgs([]string{"patch", "--dir", dir, "--write", "--commit"})
 	err := cmd.ExecuteContext(t.Context())
-	if err == nil || !strings.Contains(err.Error(), "choose one of --write, --commit, or --push") {
-		t.Fatalf("error = %v, want an action conflict", err)
-	}
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "choose one of --write, --commit, or --push")
 	manifest, readErr := os.ReadFile(filepath.Join(dir, "package.json"))
-	if readErr != nil {
-		t.Fatalf("read package.json: %v", readErr)
-	}
-	if !strings.Contains(string(manifest), "1.0.0") {
-		t.Fatalf("conflicting actions modified package.json: %s", manifest)
-	}
+	require.NoError(t, readErr)
+	assert.Contains(t, string(manifest), "1.0.0")
 }
 
 func TestCLIIgnoresUpvertFile(t *testing.T) {
@@ -100,19 +79,11 @@ func TestCLIIgnoresUpvertFile(t *testing.T) {
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&stderr)
 	cmd.SetArgs([]string{"patch", "--dir", dir})
-	if err := cmd.ExecuteContext(t.Context()); err != nil {
-		t.Fatalf("execute: %v\n%s", err, stderr.String())
-	}
-	if strings.Contains(stdout.String(), "alpha") {
-		t.Fatalf("a .upvert file affected the run:\n%s", stdout.String())
-	}
+	require.NoErrorf(t, cmd.ExecuteContext(t.Context()), "execute:\n%s", stderr.String())
+	assert.NotContains(t, stdout.String(), "alpha")
 	manifest, err := os.ReadFile(filepath.Join(dir, "package.json"))
-	if err != nil {
-		t.Fatalf("read package.json: %v", err)
-	}
-	if !strings.Contains(string(manifest), "1.0.0") {
-		t.Fatalf(".upvert file caused a write: %s", manifest)
-	}
+	require.NoError(t, err)
+	assert.Contains(t, string(manifest), "1.0.0")
 }
 
 func TestCLIRejectsInvalidPreReleaseLabel(t *testing.T) {
@@ -124,9 +95,8 @@ func TestCLIRejectsInvalidPreReleaseLabel(t *testing.T) {
 	cmd.SetErr(&bytes.Buffer{})
 	cmd.SetArgs([]string{"patch", "--dir", dir, "--pre", "bad label"})
 	err := cmd.ExecuteContext(t.Context())
-	if err == nil || !strings.Contains(err.Error(), "invalid pre-release label") {
-		t.Fatalf("error = %v, want invalid pre-release label", err)
-	}
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid pre-release label")
 }
 
 func TestCLIUnknownCommand(t *testing.T) {
@@ -134,9 +104,7 @@ func TestCLIUnknownCommand(t *testing.T) {
 	cmd.SetOut(&bytes.Buffer{})
 	cmd.SetErr(&bytes.Buffer{})
 	cmd.SetArgs([]string{"bogus"})
-	if err := cmd.ExecuteContext(t.Context()); err == nil {
-		t.Fatal("expected an error for an unknown command")
-	}
+	assert.Error(t, cmd.ExecuteContext(t.Context()))
 }
 
 func TestCLIVersion(t *testing.T) {
@@ -155,13 +123,9 @@ func TestCLIVersion(t *testing.T) {
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&bytes.Buffer{})
 	cmd.SetArgs([]string{"version"})
-	if err := cmd.ExecuteContext(t.Context()); err != nil {
-		t.Fatalf("execute: %v", err)
-	}
+	require.NoError(t, cmd.ExecuteContext(t.Context()))
 	for _, want := range []string{"upvert 1.2.3", "commit: abc123", "built: 2026-01-02T03:04:05Z"} {
-		if !strings.Contains(stdout.String(), want) {
-			t.Fatalf("version output = %q, want %q", stdout.String(), want)
-		}
+		assert.Contains(t, stdout.String(), want)
 	}
 }
 
@@ -171,13 +135,9 @@ func TestCLIHelpListsCommands(t *testing.T) {
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&bytes.Buffer{})
 	cmd.SetArgs([]string{"--help"})
-	if err := cmd.ExecuteContext(t.Context()); err != nil {
-		t.Fatalf("execute: %v", err)
-	}
+	require.NoError(t, cmd.ExecuteContext(t.Context()))
 	for _, command := range []string{"patch", "minor", "major", "rollback", "update"} {
-		if !strings.Contains(stdout.String(), command) {
-			t.Fatalf("help does not mention %q:\n%s", command, stdout.String())
-		}
+		assert.Contains(t, stdout.String(), command)
 	}
 }
 
@@ -187,13 +147,9 @@ func TestCLIPatchHelpShowsActions(t *testing.T) {
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&bytes.Buffer{})
 	cmd.SetArgs([]string{"patch", "--help"})
-	if err := cmd.ExecuteContext(t.Context()); err != nil {
-		t.Fatalf("execute: %v", err)
-	}
+	require.NoError(t, cmd.ExecuteContext(t.Context()))
 	for _, flag := range []string{"--write", "--commit", "--push"} {
-		if !strings.Contains(stdout.String(), flag) {
-			t.Fatalf("patch help does not mention %q:\n%s", flag, stdout.String())
-		}
+		assert.Contains(t, stdout.String(), flag)
 	}
 }
 
@@ -205,12 +161,8 @@ func TestCLIDirFlagIsScopedToBumpAndRollback(t *testing.T) {
 		cmd.SetOut(&stdout)
 		cmd.SetErr(&bytes.Buffer{})
 		cmd.SetArgs(args)
-		if err := cmd.ExecuteContext(t.Context()); err != nil {
-			t.Fatalf("execute: %v", err)
-		}
-		if got := strings.Contains(stdout.String(), "--dir"); got != want {
-			t.Fatalf("%v contains --dir = %v, want %v:\n%s", args, got, want, stdout.String())
-		}
+		require.NoError(t, cmd.ExecuteContext(t.Context()))
+		assert.Equal(t, want, strings.Contains(stdout.String(), "--dir"), "%v", args)
 	}
 	check([]string{"patch", "--help"}, true)
 	check([]string{"rollback", "--help"}, true)
@@ -224,13 +176,7 @@ func TestCLIRollbackHelpShowsApply(t *testing.T) {
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&bytes.Buffer{})
 	cmd.SetArgs([]string{"rollback", "--help"})
-	if err := cmd.ExecuteContext(t.Context()); err != nil {
-		t.Fatalf("execute: %v", err)
-	}
-	if !strings.Contains(stdout.String(), "--apply") {
-		t.Fatalf("rollback help does not mention --apply:\n%s", stdout.String())
-	}
-	if strings.Contains(stdout.String(), "--commit") {
-		t.Fatalf("rollback help still mentions --commit:\n%s", stdout.String())
-	}
+	require.NoError(t, cmd.ExecuteContext(t.Context()))
+	assert.Contains(t, stdout.String(), "--apply")
+	assert.NotContains(t, stdout.String(), "--commit")
 }

@@ -3,8 +3,10 @@ package python
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/dayrion/upvert/internal/ecosystem"
 )
@@ -13,21 +15,15 @@ import (
 func writeFile(t *testing.T, dir, name, content string) {
 	t.Helper()
 	path := filepath.Join(dir, filepath.FromSlash(name))
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatalf("create directories for %s: %v", name, err)
-	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatalf("write %s: %v", name, err)
-	}
+	require.NoErrorf(t, os.MkdirAll(filepath.Dir(path), 0o755), "create directories for %s", name)
+	require.NoErrorf(t, os.WriteFile(path, []byte(content), 0o644), "write %s", name)
 }
 
 // readFile returns the content of path.
 func readFile(t *testing.T, path string) string {
 	t.Helper()
 	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read %s: %v", path, err)
-	}
+	require.NoErrorf(t, err, "read %s", path)
 	return string(data)
 }
 
@@ -43,16 +39,10 @@ func TestWritePyProjectSinglePreservesFormatting(t *testing.T) {
 		Files:  []ecosystem.File{{Path: "pyproject.toml"}},
 	}
 	changed, err := New().Write(dir, target, "1.1.0", nil)
-	if err != nil {
-		t.Fatalf("Write: %v", err)
-	}
-	if !changed {
-		t.Fatal("expected the project version to change")
-	}
+	require.NoError(t, err)
+	assert.True(t, changed)
 	want := "# head\n[project]\nname = 'demo'\nversion = '1.1.0' # keep\n\n[tool.poetry.dependencies]\nversion = '2.0.0'\n"
-	if got := readFile(t, path); got != want {
-		t.Fatalf("content = %q, want %q", got, want)
-	}
+	assert.Equal(t, want, readFile(t, path))
 }
 
 func TestWritePyProjectMultiUpdatesSections(t *testing.T) {
@@ -64,13 +54,10 @@ func TestWritePyProjectMultiUpdatesSections(t *testing.T) {
 		Kind:  ecosystem.Python,
 		Files: []ecosystem.File{{Path: "pyproject.toml"}},
 	}
-	if _, err := New().Write(dir, target, "1.1.0", nil); err != nil {
-		t.Fatalf("Write: %v", err)
-	}
+	_, err := New().Write(dir, target, "1.1.0", nil)
+	require.NoError(t, err)
 	want := "[project]\nversion = \"1.1.0\"\n\n[tool.poetry]\nversion = \"1.1.0\"\n"
-	if got := readFile(t, path); got != want {
-		t.Fatalf("content = %q, want %q", got, want)
-	}
+	assert.Equal(t, want, readFile(t, path))
 }
 
 func TestWriteSetupCfgVersionHandlesUnquotedValue(t *testing.T) {
@@ -82,13 +69,10 @@ func TestWriteSetupCfgVersionHandlesUnquotedValue(t *testing.T) {
 		Kind:  ecosystem.Python,
 		Files: []ecosystem.File{{Path: "setup.cfg"}},
 	}
-	if _, err := New().Write(dir, target, "1.1.0", nil); err != nil {
-		t.Fatalf("Write: %v", err)
-	}
+	_, err := New().Write(dir, target, "1.1.0", nil)
+	require.NoError(t, err)
 	want := "[metadata]\nname = demo\nversion = 1.1.0\n"
-	if got := readFile(t, path); got != want {
-		t.Fatalf("content = %q, want %q", got, want)
-	}
+	assert.Equal(t, want, readFile(t, path))
 }
 
 func TestExplicitPythonModuleReadsAndWrites(t *testing.T) {
@@ -101,18 +85,11 @@ func TestExplicitPythonModuleReadsAndWrites(t *testing.T) {
 		Files:  []ecosystem.File{{Path: "__init__.py", InCode: true}},
 	}
 	version, err := New().Read(dir, target, nil)
-	if err != nil {
-		t.Fatalf("Read: %v", err)
-	}
-	if version != "1.0.0" {
-		t.Fatalf("Read = %q, want 1.0.0", version)
-	}
-	if _, err := New().Write(dir, target, "1.1.0", nil); err != nil {
-		t.Fatalf("Write: %v", err)
-	}
-	if got := readFile(t, path); !strings.Contains(got, "__version__ = '1.1.0'") {
-		t.Fatalf("module was not rewritten: %q", got)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, "1.0.0", version)
+	_, err = New().Write(dir, target, "1.1.0", nil)
+	require.NoError(t, err)
+	assert.Contains(t, readFile(t, path), "__version__ = '1.1.0'")
 }
 
 func TestWritePythonModuleVersionKeepsQuoteStyle(t *testing.T) {
@@ -124,11 +101,8 @@ func TestWritePythonModuleVersionKeepsQuoteStyle(t *testing.T) {
 		Kind:  ecosystem.Python,
 		Files: []ecosystem.File{{Path: "__init__.py", InCode: true}},
 	}
-	if _, err := New().Write(dir, target, "1.1.0", nil); err != nil {
-		t.Fatalf("Write: %v", err)
-	}
+	_, err := New().Write(dir, target, "1.1.0", nil)
+	require.NoError(t, err)
 	want := "__version__ = '1.1.0'\nVERSION = \"1.1.0\"\n"
-	if got := readFile(t, path); got != want {
-		t.Fatalf("content = %q, want %q", got, want)
-	}
+	assert.Equal(t, want, readFile(t, path))
 }

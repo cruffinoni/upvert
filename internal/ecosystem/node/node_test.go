@@ -7,6 +7,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/dayrion/upvert/internal/ecosystem"
 )
 
@@ -14,21 +17,15 @@ import (
 func writeFile(t *testing.T, dir, name, content string) {
 	t.Helper()
 	path := filepath.Join(dir, filepath.FromSlash(name))
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatalf("create directories for %s: %v", name, err)
-	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatalf("write %s: %v", name, err)
-	}
+	require.NoErrorf(t, os.MkdirAll(filepath.Dir(path), 0o755), "create directories for %s", name)
+	require.NoErrorf(t, os.WriteFile(path, []byte(content), 0o644), "write %s", name)
 }
 
 // readFile returns the content of path.
 func readFile(t *testing.T, path string) string {
 	t.Helper()
 	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read %s: %v", path, err)
-	}
+	require.NoErrorf(t, err, "read %s", path)
 	return string(data)
 }
 
@@ -40,54 +37,34 @@ func TestSetJSONString(t *testing.T) {
 }
 `)
 	updated, err := setJSONString(input, []string{"version"}, "1.1.0")
-	if err != nil {
-		t.Fatalf("setJSONString: %v", err)
-	}
-	if !json.Valid(updated) {
-		t.Fatalf("result is not valid json: %s", updated)
-	}
+	require.NoError(t, err)
+	assert.True(t, json.Valid(updated))
 	var parsed map[string]any
-	if err := json.Unmarshal(updated, &parsed); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if parsed["version"] != "1.1.0" {
-		t.Fatalf("version = %v, want 1.1.0", parsed["version"])
-	}
-	if parsed["name"] != "demo" {
-		t.Fatalf("name = %v, want demo", parsed["name"])
-	}
+	require.NoError(t, json.Unmarshal(updated, &parsed))
+	assert.Equal(t, "1.1.0", parsed["version"])
+	assert.Equal(t, "demo", parsed["name"])
 	nested, ok := parsed["nested"].(map[string]any)
-	if !ok {
-		t.Fatalf("nested = %T, want object", parsed["nested"])
-	}
-	if nested["version"] != "9.9.9" {
-		t.Fatalf("nested version = %v, want 9.9.9", nested["version"])
-	}
+	require.True(t, ok)
+	assert.Equal(t, "9.9.9", nested["version"])
 }
 
 func TestSetJSONStringNestedEmptyKey(t *testing.T) {
 	input := []byte(`{"packages":{"":{"version":"1.0.0"}}}`)
 	updated, err := setJSONString(input, []string{"packages", "", "version"}, "1.1.0")
-	if err != nil {
-		t.Fatalf("setJSONString: %v", err)
-	}
+	require.NoError(t, err)
 	want := `{"packages":{"":{"version":"1.1.0"}}}`
-	if string(updated) != want {
-		t.Fatalf("updated = %s, want %s", updated, want)
-	}
+	assert.Equal(t, want, string(updated))
 }
 
 func TestSetJSONStringMissingKey(t *testing.T) {
 	_, err := setJSONString([]byte(`{"name":"demo"}`), []string{"version"}, "1.1.0")
-	if !errors.Is(err, errJSONKeyNotFound) {
-		t.Fatalf("error = %v, want errJSONKeyNotFound", err)
-	}
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, errJSONKeyNotFound))
 }
 
 func TestSetJSONStringRejectsInvalidInput(t *testing.T) {
-	if _, err := setJSONString([]byte("not json"), []string{"version"}, "1.1.0"); err == nil {
-		t.Fatal("expected an error for invalid json")
-	}
+	_, err := setJSONString([]byte("not json"), []string{"version"}, "1.1.0")
+	require.Error(t, err)
 }
 
 func TestWriteNodeManifestPreservesFormatting(t *testing.T) {
@@ -106,21 +83,15 @@ func TestWriteNodeManifestPreservesFormatting(t *testing.T) {
 		Files:  []ecosystem.File{{Path: "package.json"}},
 	}
 	changed, err := New().Write(dir, target, "1.1.0", nil)
-	if err != nil {
-		t.Fatalf("Write: %v", err)
-	}
-	if !changed {
-		t.Fatal("expected the manifest to change")
-	}
+	require.NoError(t, err)
+	assert.True(t, changed)
 	want := `{
   "name": "demo",
   "version": "1.1.0",
   "nested": {"version": "9.9.9"}
 }
 `
-	if got := readFile(t, path); got != want {
-		t.Fatalf("content = %q, want %q", got, want)
-	}
+	assert.Equal(t, want, readFile(t, path))
 }
 
 func TestWriteNodeLockfileUpdatesBothVersions(t *testing.T) {
@@ -141,9 +112,8 @@ func TestWriteNodeLockfileUpdatesBothVersions(t *testing.T) {
 		Kind:  ecosystem.Node,
 		Files: []ecosystem.File{{Path: "package-lock.json"}},
 	}
-	if _, err := New().Write(dir, target, "1.1.0", nil); err != nil {
-		t.Fatalf("Write: %v", err)
-	}
+	_, err := New().Write(dir, target, "1.1.0", nil)
+	require.NoError(t, err)
 	want := `{
   "name": "demo",
   "version": "1.1.0",
@@ -154,7 +124,5 @@ func TestWriteNodeLockfileUpdatesBothVersions(t *testing.T) {
   }
 }
 `
-	if got := readFile(t, path); got != want {
-		t.Fatalf("content = %q, want %q", got, want)
-	}
+	assert.Equal(t, want, readFile(t, path))
 }

@@ -157,7 +157,7 @@ func TestRunReportsProgress(t *testing.T) {
 		case "advance":
 			lastAdvance = call.done
 		case "abort":
-			t.Fatal("unexpected abort")
+			require.FailNow(t, "unexpected abort")
 		}
 	}
 	assert.Equal(t, 5, starts)

@@ -1,6 +1,11 @@
 package semver
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
 
 func TestNext(t *testing.T) {
 	tests := []struct {
@@ -23,12 +28,8 @@ func TestNext(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := Next(tt.current, tt.kind, tt.pre)
-			if err != nil {
-				t.Fatalf("Next(%q, %q, %q): %v", tt.current, tt.kind, tt.pre, err)
-			}
-			if got != tt.want {
-				t.Fatalf("Next(%q, %q, %q) = %q, want %q", tt.current, tt.kind, tt.pre, got, tt.want)
-			}
+			require.NoErrorf(t, err, "Next(%q, %q, %q)", tt.current, tt.kind, tt.pre)
+			assert.Equalf(t, tt.want, got, "Next(%q, %q, %q)", tt.current, tt.kind, tt.pre)
 		})
 	}
 }
@@ -44,9 +45,8 @@ func TestNextErrors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if _, err := Next(tt.current, tt.kind, ""); err == nil {
-				t.Fatal("expected an error")
-			}
+			_, err := Next(tt.current, tt.kind, "")
+			require.Error(t, err)
 		})
 	}
 }
@@ -68,12 +68,8 @@ func TestCompare(t *testing.T) {
 	}
 	for _, tt := range tests {
 		got, err := Compare(tt.a, tt.b)
-		if err != nil {
-			t.Fatalf("Compare(%q, %q): %v", tt.a, tt.b, err)
-		}
-		if got != tt.want {
-			t.Fatalf("Compare(%q, %q) = %d, want %d", tt.a, tt.b, got, tt.want)
-		}
+		require.NoErrorf(t, err, "Compare(%q, %q)", tt.a, tt.b)
+		assert.Equalf(t, tt.want, got, "Compare(%q, %q)", tt.a, tt.b)
 	}
 }
 
@@ -90,8 +86,7 @@ func TestSplitPreRelease(t *testing.T) {
 	}
 	for _, tt := range tests {
 		label, counter := splitPreRelease(tt.pre)
-		if label != tt.label || counter != tt.counter {
-			t.Fatalf("splitPreRelease(%q) = (%q, %d), want (%q, %d)", tt.pre, label, counter, tt.label, tt.counter)
-		}
+		assert.Equal(t, tt.label, label)
+		assert.Equal(t, tt.counter, counter)
 	}
 }

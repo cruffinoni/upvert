@@ -16,6 +16,9 @@ import (
 	"strconv"
 	"sync/atomic"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // serverStats counts the release requests an update makes.
@@ -72,24 +75,14 @@ func tarGzArchive(t *testing.T, name string, content []byte) []byte {
 	archive := tar.NewWriter(compressed)
 
 	license := []byte("license")
-	if err := archive.WriteHeader(&tar.Header{Name: "LICENSE", Mode: 0o644, Size: int64(len(license))}); err != nil {
-		t.Fatalf("write tar header: %v", err)
-	}
-	if _, err := archive.Write(license); err != nil {
-		t.Fatalf("write tar content: %v", err)
-	}
-	if err := archive.WriteHeader(&tar.Header{Name: name, Mode: 0o755, Size: int64(len(content))}); err != nil {
-		t.Fatalf("write tar header: %v", err)
-	}
-	if _, err := archive.Write(content); err != nil {
-		t.Fatalf("write tar content: %v", err)
-	}
-	if err := archive.Close(); err != nil {
-		t.Fatalf("close tar: %v", err)
-	}
-	if err := compressed.Close(); err != nil {
-		t.Fatalf("close gzip: %v", err)
-	}
+	require.NoError(t, archive.WriteHeader(&tar.Header{Name: "LICENSE", Mode: 0o644, Size: int64(len(license))}))
+	_, err := archive.Write(license)
+	require.NoError(t, err)
+	require.NoError(t, archive.WriteHeader(&tar.Header{Name: name, Mode: 0o755, Size: int64(len(content))}))
+	_, err = archive.Write(content)
+	require.NoError(t, err)
+	require.NoError(t, archive.Close())
+	require.NoError(t, compressed.Close())
 	return buffer.Bytes()
 }
 
@@ -99,15 +92,10 @@ func zipArchive(t *testing.T, name string, content []byte) []byte {
 	var buffer bytes.Buffer
 	archive := zip.NewWriter(&buffer)
 	file, err := archive.Create(name)
-	if err != nil {
-		t.Fatalf("create zip entry: %v", err)
-	}
-	if _, err := file.Write(content); err != nil {
-		t.Fatalf("write zip entry: %v", err)
-	}
-	if err := archive.Close(); err != nil {
-		t.Fatalf("close zip: %v", err)
-	}
+	require.NoError(t, err)
+	_, err = file.Write(content)
+	require.NoError(t, err)
+	require.NoError(t, archive.Close())
 	return buffer.Bytes()
 }
 
@@ -133,9 +121,7 @@ func writeBinDir(t *testing.T, content []byte) string {
 	t.Helper()
 	dir := t.TempDir()
 	path := filepath.Join(dir, executableName(runtime.GOOS))
-	if err := os.WriteFile(path, content, 0o755); err != nil {
-		t.Fatalf("write target: %v", err)
-	}
+	require.NoError(t, os.WriteFile(path, content, 0o755))
 	return dir
 }
 
@@ -154,13 +140,11 @@ func newReleaseServer(t *testing.T, tag, asset, checksum string, archive []byte)
 		case "/download/" + tag + "/" + asset:
 			stats.downloads.Add(1)
 			w.Header().Set("Content-Length", strconv.Itoa(len(archive)))
-			if _, err := w.Write(archive); err != nil {
-				t.Errorf("write archive: %v", err)
-			}
+			_, err := w.Write(archive)
+			assert.NoError(t, err)
 		case "/download/" + tag + "/checksums.txt":
-			if _, err := fmt.Fprintf(w, "%s  %s\n", checksum, asset); err != nil {
-				t.Errorf("write checksums: %v", err)
-			}
+			_, err := fmt.Fprintf(w, "%s  %s\n", checksum, asset)
+			assert.NoError(t, err)
 		default:
 			http.NotFound(w, r)
 		}

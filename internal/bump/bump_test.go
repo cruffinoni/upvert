@@ -4,34 +4,24 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestBumpCommit(t *testing.T) {
 	dir := initTestRepo(t, map[string]string{
 		"package.json": "{\n  \"name\": \"demo\",\n  \"version\": \"1.2.3\"\n}\n",
 	})
-	if err := Apply(t.Context(), Config{Dir: dir, Mode: ModeCommit}, Patch); err != nil {
-		t.Fatalf("Bump: %v", err)
-	}
+	require.NoError(t, Apply(t.Context(), Config{Dir: dir, Mode: ModeCommit}, Patch))
 	manifest := readTestFile(t, filepath.Join(dir, "package.json"))
-	if !strings.Contains(manifest, "\"version\": \"1.2.4\"") {
-		t.Fatalf("package.json was not bumped:\n%s", manifest)
-	}
+	assert.Contains(t, manifest, "\"version\": \"1.2.4\"")
 	changelog := readTestFile(t, filepath.Join(dir, "CHANGELOG.md"))
-	if !strings.Contains(changelog, "## [1.2.4]") {
-		t.Fatalf("changelog was not updated:\n%s", changelog)
-	}
-	if tags := gitRun(t, dir, "tag"); tags != "v1.2.4" {
-		t.Fatalf("tags = %q, want v1.2.4", tags)
-	}
-	if subject := gitRun(t, dir, "log", "-1", "--pretty=%s"); subject != "chore: bump version to 1.2.4" {
-		t.Fatalf("commit subject = %q", subject)
-	}
-	if status := gitRun(t, dir, "status", "--porcelain"); status != "" {
-		t.Fatalf("work tree is dirty after the bump:\n%s", status)
-	}
+	assert.Contains(t, changelog, "## [1.2.4]")
+	assert.Equal(t, "v1.2.4", gitRun(t, dir, "tag"))
+	assert.Equal(t, "chore: bump version to 1.2.4", gitRun(t, dir, "log", "-1", "--pretty=%s"))
+	assert.Empty(t, gitRun(t, dir, "status", "--porcelain"))
 }
 
 func TestBumpDryRunLeavesRepositoryUntouched(t *testing.T) {
@@ -39,21 +29,13 @@ func TestBumpDryRunLeavesRepositoryUntouched(t *testing.T) {
 		"package.json": "{\"name\":\"demo\",\"version\":\"1.2.3\"}\n",
 	})
 	cfg := Config{Dir: dir, Stdout: io.Discard, Stderr: io.Discard}
-	if err := Apply(t.Context(), cfg, Patch); err != nil {
-		t.Fatalf("Bump: %v", err)
-	}
-	if manifest := readTestFile(t, filepath.Join(dir, "package.json")); !strings.Contains(manifest, "\"1.2.3\"") {
-		t.Fatalf("dry run modified package.json:\n%s", manifest)
-	}
-	if _, err := os.Stat(filepath.Join(dir, "CHANGELOG.md")); err == nil {
-		t.Fatal("dry run created a changelog")
-	}
-	if tags := gitRun(t, dir, "tag"); tags != "" {
-		t.Fatalf("dry run created tags: %q", tags)
-	}
-	if subject := gitRun(t, dir, "log", "-1", "--pretty=%s"); subject != "initial commit" {
-		t.Fatalf("dry run created a commit: %q", subject)
-	}
+	require.NoError(t, Apply(t.Context(), cfg, Patch))
+	manifest := readTestFile(t, filepath.Join(dir, "package.json"))
+	assert.Contains(t, manifest, "\"1.2.3\"")
+	_, err := os.Stat(filepath.Join(dir, "CHANGELOG.md"))
+	assert.True(t, os.IsNotExist(err))
+	assert.Empty(t, gitRun(t, dir, "tag"))
+	assert.Equal(t, "initial commit", gitRun(t, dir, "log", "-1", "--pretty=%s"))
 }
 
 func TestBumpGoWithoutVersionUsesTags(t *testing.T) {
@@ -61,24 +43,14 @@ func TestBumpGoWithoutVersionUsesTags(t *testing.T) {
 		"go.mod":  "module example.com/demo\n\ngo 1.27\n",
 		"main.go": "package main\n\nvar version = \"dev\"\n\nfunc main() {}\n",
 	})
-	if err := Apply(t.Context(), Config{Dir: dir, Mode: ModeCommit}, Patch); err != nil {
-		t.Fatalf("Bump: %v", err)
-	}
-	if source := readTestFile(t, filepath.Join(dir, "main.go")); !strings.Contains(source, "var version = \"dev\"") {
-		t.Fatalf("tag-sourced bump modified main.go:\n%s", source)
-	}
-	if changelog := readTestFile(t, filepath.Join(dir, "CHANGELOG.md")); !strings.Contains(changelog, "## [0.0.1]") {
-		t.Fatalf("changelog was not updated:\n%s", changelog)
-	}
-	if tags := gitRun(t, dir, "tag"); tags != "v0.0.1" {
-		t.Fatalf("tags = %q, want v0.0.1", tags)
-	}
-	if err := Apply(t.Context(), Config{Dir: dir, Mode: ModeCommit}, Patch); err != nil {
-		t.Fatalf("second Bump: %v", err)
-	}
-	if tags := gitRun(t, dir, "tag"); !strings.Contains(tags, "v0.0.2") {
-		t.Fatalf("tags = %q, want v0.0.2", tags)
-	}
+	require.NoError(t, Apply(t.Context(), Config{Dir: dir, Mode: ModeCommit}, Patch))
+	source := readTestFile(t, filepath.Join(dir, "main.go"))
+	assert.Contains(t, source, "var version = \"dev\"")
+	changelog := readTestFile(t, filepath.Join(dir, "CHANGELOG.md"))
+	assert.Contains(t, changelog, "## [0.0.1]")
+	assert.Equal(t, "v0.0.1", gitRun(t, dir, "tag"))
+	require.NoError(t, Apply(t.Context(), Config{Dir: dir, Mode: ModeCommit}, Patch))
+	assert.Contains(t, gitRun(t, dir, "tag"), "v0.0.2")
 }
 
 func TestBumpGoTagSourceWriteIsRejected(t *testing.T) {
@@ -87,37 +59,24 @@ func TestBumpGoTagSourceWriteIsRejected(t *testing.T) {
 		"main.go": "package main\n\nvar version = \"dev\"\n\nfunc main() {}\n",
 	})
 	err := Apply(t.Context(), Config{Dir: dir, Mode: ModeWrite}, Patch)
-	if err == nil || !strings.Contains(err.Error(), "tag-sourced projects require a tag") {
-		t.Fatalf("error = %v, want a tag-source error", err)
-	}
-	if source := readTestFile(t, filepath.Join(dir, "main.go")); !strings.Contains(source, "var version = \"dev\"") {
-		t.Fatalf("rejected write modified main.go:\n%s", source)
-	}
-	if tags := gitRun(t, dir, "tag"); tags != "" {
-		t.Fatalf("rejected write created tags: %q", tags)
-	}
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "tag-sourced projects require a tag")
+	source := readTestFile(t, filepath.Join(dir, "main.go"))
+	assert.Contains(t, source, "var version = \"dev\"")
+	assert.Empty(t, gitRun(t, dir, "tag"))
 }
 
 func TestBumpWriteLeavesGitUntouched(t *testing.T) {
 	dir := initTestRepo(t, map[string]string{
 		"package.json": "{\"name\":\"demo\",\"version\":\"1.2.3\"}\n",
 	})
-	if err := Apply(t.Context(), Config{Dir: dir, Mode: ModeWrite}, Patch); err != nil {
-		t.Fatalf("Bump: %v", err)
-	}
+	require.NoError(t, Apply(t.Context(), Config{Dir: dir, Mode: ModeWrite}, Patch))
 	manifest := readTestFile(t, filepath.Join(dir, "package.json"))
-	if !strings.Contains(manifest, "\"1.2.4\"") {
-		t.Fatalf("package.json was not bumped:\n%s", manifest)
-	}
-	if _, err := os.Stat(filepath.Join(dir, "CHANGELOG.md")); err != nil {
-		t.Fatalf("changelog was not created: %v", err)
-	}
-	if tags := gitRun(t, dir, "tag"); tags != "" {
-		t.Fatalf("write mode created tags: %q", tags)
-	}
-	if subject := gitRun(t, dir, "log", "-1", "--pretty=%s"); subject != "initial commit" {
-		t.Fatalf("write mode created a commit: %q", subject)
-	}
+	assert.Contains(t, manifest, "\"1.2.4\"")
+	_, err := os.Stat(filepath.Join(dir, "CHANGELOG.md"))
+	assert.NoError(t, err)
+	assert.Empty(t, gitRun(t, dir, "tag"))
+	assert.Equal(t, "initial commit", gitRun(t, dir, "log", "-1", "--pretty=%s"))
 }
 
 func TestBumpNoVersionAttrWithoutWritableDeclaration(t *testing.T) {
@@ -127,15 +86,11 @@ func TestBumpNoVersionAttrWithoutWritableDeclaration(t *testing.T) {
 	})
 	cfg := Config{Dir: dir, Mode: ModeCommit, NoVersionAttr: true}
 	err := Apply(t.Context(), cfg, Patch)
-	if err == nil || !strings.Contains(err.Error(), "no writable version declaration") {
-		t.Fatalf("error = %v, want no writable version declaration", err)
-	}
-	if source := readTestFile(t, filepath.Join(dir, "version.go")); !strings.Contains(source, "Version = \"1.0.0\"") {
-		t.Fatalf("failed bump modified version.go:\n%s", source)
-	}
-	if tags := gitRun(t, dir, "tag"); tags != "" {
-		t.Fatalf("failed bump created tags: %q", tags)
-	}
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no writable version declaration")
+	source := readTestFile(t, filepath.Join(dir, "version.go"))
+	assert.Contains(t, source, "Version = \"1.0.0\"")
+	assert.Empty(t, gitRun(t, dir, "tag"))
 }
 
 func TestBumpRejectsMessageWithoutPlaceholder(t *testing.T) {
@@ -144,12 +99,10 @@ func TestBumpRejectsMessageWithoutPlaceholder(t *testing.T) {
 	})
 	cfg := Config{Dir: dir, Mode: ModeCommit, Message: "release"}
 	err := Apply(t.Context(), cfg, Patch)
-	if err == nil || !strings.Contains(err.Error(), "must contain {version}") {
-		t.Fatalf("error = %v, want a placeholder error", err)
-	}
-	if manifest := readTestFile(t, filepath.Join(dir, "package.json")); !strings.Contains(manifest, "1.0.0") {
-		t.Fatalf("failed bump modified package.json:\n%s", manifest)
-	}
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "must contain {version}")
+	manifest := readTestFile(t, filepath.Join(dir, "package.json"))
+	assert.Contains(t, manifest, "1.0.0")
 }
 
 func TestBumpMultiLanguageWriteIsRejected(t *testing.T) {
@@ -159,12 +112,10 @@ func TestBumpMultiLanguageWriteIsRejected(t *testing.T) {
 		"package.json": "{\"name\":\"demo\",\"version\":\"1.2.3\"}\n",
 	})
 	err := Apply(t.Context(), Config{Dir: dir, Mode: ModeWrite}, Patch)
-	if err == nil || !strings.Contains(err.Error(), "multi-language projects require a tag") {
-		t.Fatalf("error = %v, want a multi-language tag error", err)
-	}
-	if manifest := readTestFile(t, filepath.Join(dir, "package.json")); !strings.Contains(manifest, "1.2.3") {
-		t.Fatalf("rejected write modified package.json:\n%s", manifest)
-	}
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "multi-language projects require a tag")
+	manifest := readTestFile(t, filepath.Join(dir, "package.json"))
+	assert.Contains(t, manifest, "1.2.3")
 }
 
 func TestBumpPushRequiresOrigin(t *testing.T) {
@@ -172,15 +123,11 @@ func TestBumpPushRequiresOrigin(t *testing.T) {
 		"package.json": "{\"name\":\"demo\",\"version\":\"1.0.0\"}\n",
 	})
 	err := Apply(t.Context(), Config{Dir: dir, Mode: ModePush}, Patch)
-	if err == nil || !strings.Contains(err.Error(), "no origin remote") {
-		t.Fatalf("error = %v, want a missing origin error", err)
-	}
-	if manifest := readTestFile(t, filepath.Join(dir, "package.json")); !strings.Contains(manifest, "1.0.0") {
-		t.Fatalf("failed push modified package.json:\n%s", manifest)
-	}
-	if tags := gitRun(t, dir, "tag"); tags != "" {
-		t.Fatalf("failed push created tags: %q", tags)
-	}
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no origin remote")
+	manifest := readTestFile(t, filepath.Join(dir, "package.json"))
+	assert.Contains(t, manifest, "1.0.0")
+	assert.Empty(t, gitRun(t, dir, "tag"))
 }
 
 func TestBumpPreRelease(t *testing.T) {
@@ -188,15 +135,10 @@ func TestBumpPreRelease(t *testing.T) {
 		"package.json": "{\"name\":\"demo\",\"version\":\"1.0.0\"}\n",
 	})
 	cfg := Config{Dir: dir, Mode: ModeCommit, PreRelease: "alpha"}
-	if err := Apply(t.Context(), cfg, Minor); err != nil {
-		t.Fatalf("Bump: %v", err)
-	}
-	if manifest := readTestFile(t, filepath.Join(dir, "package.json")); !strings.Contains(manifest, "\"version\":\"1.1.0-alpha.1\"") {
-		t.Fatalf("package.json was not pre-released:\n%s", manifest)
-	}
-	if tags := gitRun(t, dir, "tag"); tags != "v1.1.0-alpha.1" {
-		t.Fatalf("tags = %q, want v1.1.0-alpha.1", tags)
-	}
+	require.NoError(t, Apply(t.Context(), cfg, Minor))
+	manifest := readTestFile(t, filepath.Join(dir, "package.json"))
+	assert.Contains(t, manifest, "\"version\":\"1.1.0-alpha.1\"")
+	assert.Equal(t, "v1.1.0-alpha.1", gitRun(t, dir, "tag"))
 }
 
 func TestBumpRejectsDirtyWorkTree(t *testing.T) {
@@ -205,9 +147,8 @@ func TestBumpRejectsDirtyWorkTree(t *testing.T) {
 	})
 	writeTestFile(t, dir, "package.json", "{\"name\":\"demo\",\"version\":\"1.2.3\",\"extra\":true}\n")
 	err := Apply(t.Context(), Config{Dir: dir, Mode: ModeCommit}, Patch)
-	if err == nil || !strings.Contains(err.Error(), "uncommitted changes") {
-		t.Fatalf("error = %v, want uncommitted changes", err)
-	}
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "uncommitted changes")
 }
 
 func TestBumpRejectsVersionTagMismatch(t *testing.T) {
@@ -216,12 +157,10 @@ func TestBumpRejectsVersionTagMismatch(t *testing.T) {
 	})
 	gitRun(t, dir, "tag", "-a", "v1.3.0", "-m", "later release")
 	err := Apply(t.Context(), Config{Dir: dir, Mode: ModeCommit}, Patch)
-	if err == nil || !strings.Contains(err.Error(), "differs from latest tag") {
-		t.Fatalf("error = %v, want version/tag mismatch", err)
-	}
-	if manifest := readTestFile(t, filepath.Join(dir, "package.json")); !strings.Contains(manifest, "\"1.2.3\"") {
-		t.Fatalf("failed bump modified package.json:\n%s", manifest)
-	}
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "differs from latest tag")
+	manifest := readTestFile(t, filepath.Join(dir, "package.json"))
+	assert.Contains(t, manifest, "\"1.2.3\"")
 }
 
 func TestBumpRejectsInvalidPreReleaseLabel(t *testing.T) {
@@ -229,9 +168,7 @@ func TestBumpRejectsInvalidPreReleaseLabel(t *testing.T) {
 		"package.json": "{\"name\":\"demo\",\"version\":\"1.0.0\"}\n",
 	})
 	cfg := Config{Dir: dir, Mode: ModeCommit, PreRelease: "not a label"}
-	if err := Apply(t.Context(), cfg, Patch); err == nil {
-		t.Fatal("expected an error for an invalid pre-release label")
-	}
+	require.Error(t, Apply(t.Context(), cfg, Patch))
 }
 
 func TestRollback(t *testing.T) {
@@ -239,24 +176,14 @@ func TestRollback(t *testing.T) {
 		"package.json": "{\"name\":\"demo\",\"version\":\"1.0.0\"}\n",
 		"README.md":    "# demo\n",
 	})
-	if err := Apply(t.Context(), Config{Dir: dir, Mode: ModeCommit}, Patch); err != nil {
-		t.Fatalf("Bump: %v", err)
-	}
-	if err := Rollback(t.Context(), Config{Dir: dir, Mode: ModeApply}); err != nil {
-		t.Fatalf("Rollback: %v", err)
-	}
-	if manifest := readTestFile(t, filepath.Join(dir, "package.json")); !strings.Contains(manifest, "\"1.0.0\"") {
-		t.Fatalf("package.json was not restored:\n%s", manifest)
-	}
-	if tags := gitRun(t, dir, "tag"); tags != "" {
-		t.Fatalf("tags after rollback = %q, want none", tags)
-	}
-	if subject := gitRun(t, dir, "log", "-1", "--pretty=%s"); subject != "initial commit" {
-		t.Fatalf("rollback left commit %q", subject)
-	}
-	if _, err := os.Stat(filepath.Join(dir, "CHANGELOG.md")); err == nil {
-		t.Fatal("rollback left the changelog behind")
-	}
+	require.NoError(t, Apply(t.Context(), Config{Dir: dir, Mode: ModeCommit}, Patch))
+	require.NoError(t, Rollback(t.Context(), Config{Dir: dir, Mode: ModeApply}))
+	manifest := readTestFile(t, filepath.Join(dir, "package.json"))
+	assert.Contains(t, manifest, "\"1.0.0\"")
+	assert.Empty(t, gitRun(t, dir, "tag"))
+	assert.Equal(t, "initial commit", gitRun(t, dir, "log", "-1", "--pretty=%s"))
+	_, err := os.Stat(filepath.Join(dir, "CHANGELOG.md"))
+	assert.True(t, os.IsNotExist(err))
 }
 
 func TestRollbackCustomCommitMessage(t *testing.T) {
@@ -264,20 +191,12 @@ func TestRollbackCustomCommitMessage(t *testing.T) {
 		"package.json": "{\"name\":\"demo\",\"version\":\"1.0.0\"}\n",
 	})
 	cfg := Config{Dir: dir, Mode: ModeCommit, Message: "release {version}"}
-	if err := Apply(t.Context(), cfg, Patch); err != nil {
-		t.Fatalf("Bump: %v", err)
-	}
-	if subject := gitRun(t, dir, "log", "-1", "--pretty=%s"); subject != "release 1.0.1" {
-		t.Fatalf("commit subject = %q", subject)
-	}
+	require.NoError(t, Apply(t.Context(), cfg, Patch))
+	assert.Equal(t, "release 1.0.1", gitRun(t, dir, "log", "-1", "--pretty=%s"))
 	rollbackCfg := cfg
 	rollbackCfg.Mode = ModeApply
-	if err := Rollback(t.Context(), rollbackCfg); err != nil {
-		t.Fatalf("Rollback: %v", err)
-	}
-	if tags := gitRun(t, dir, "tag"); tags != "" {
-		t.Fatalf("tags after rollback = %q, want none", tags)
-	}
+	require.NoError(t, Rollback(t.Context(), rollbackCfg))
+	assert.Empty(t, gitRun(t, dir, "tag"))
 }
 
 func TestBumpMultiLanguageUsesTags(t *testing.T) {
@@ -286,24 +205,15 @@ func TestBumpMultiLanguageUsesTags(t *testing.T) {
 		"version.go":   "package demo\n\nconst Version = \"1.2.3\"\n",
 		"package.json": "{\"name\":\"demo\",\"version\":\"1.2.3\"}\n",
 	})
-	if err := Apply(t.Context(), Config{Dir: dir, Mode: ModeCommit}, Patch); err != nil {
-		t.Fatalf("Bump: %v", err)
-	}
-	if manifest := readTestFile(t, filepath.Join(dir, "package.json")); !strings.Contains(manifest, "\"version\":\"0.0.1\"") {
-		t.Fatalf("package.json not synced from tags:\n%s", manifest)
-	}
-	if source := readTestFile(t, filepath.Join(dir, "version.go")); !strings.Contains(source, "Version = \"0.0.1\"") {
-		t.Fatalf("version.go not synced from tags:\n%s", source)
-	}
-	if tags := gitRun(t, dir, "tag"); tags != "v0.0.1" {
-		t.Fatalf("tags = %q, want v0.0.1", tags)
-	}
-	if err := Apply(t.Context(), Config{Dir: dir, Mode: ModeCommit}, Patch); err != nil {
-		t.Fatalf("second Bump: %v", err)
-	}
-	if manifest := readTestFile(t, filepath.Join(dir, "package.json")); !strings.Contains(manifest, "\"version\":\"0.0.2\"") {
-		t.Fatalf("second bump did not advance from the tag:\n%s", manifest)
-	}
+	require.NoError(t, Apply(t.Context(), Config{Dir: dir, Mode: ModeCommit}, Patch))
+	manifest := readTestFile(t, filepath.Join(dir, "package.json"))
+	assert.Contains(t, manifest, "\"version\":\"0.0.1\"")
+	source := readTestFile(t, filepath.Join(dir, "version.go"))
+	assert.Contains(t, source, "Version = \"0.0.1\"")
+	assert.Equal(t, "v0.0.1", gitRun(t, dir, "tag"))
+	require.NoError(t, Apply(t.Context(), Config{Dir: dir, Mode: ModeCommit}, Patch))
+	manifest = readTestFile(t, filepath.Join(dir, "package.json"))
+	assert.Contains(t, manifest, "\"version\":\"0.0.2\"")
 }
 
 func TestBumpHooks(t *testing.T) {
@@ -316,13 +226,8 @@ func TestBumpHooks(t *testing.T) {
 		PreBump:  "printf pre >> hooks.log",
 		PostBump: "printf post >> hooks.log",
 	}
-	if err := Apply(t.Context(), cfg, Patch); err != nil {
-		t.Fatalf("Bump: %v", err)
-	}
-	hooks := readTestFile(t, filepath.Join(dir, "hooks.log"))
-	if hooks != "prepost" {
-		t.Fatalf("hooks log = %q, want prepost", hooks)
-	}
+	require.NoError(t, Apply(t.Context(), cfg, Patch))
+	assert.Equal(t, "prepost", readTestFile(t, filepath.Join(dir, "hooks.log")))
 }
 
 func TestDryRunSkipsPreBumpHook(t *testing.T) {
@@ -335,28 +240,20 @@ func TestDryRunSkipsPreBumpHook(t *testing.T) {
 		Stdout:  io.Discard,
 		Stderr:  io.Discard,
 	}
-	if err := Apply(t.Context(), cfg, Patch); err != nil {
-		t.Fatalf("Bump: %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(dir, "hook-ran")); !os.IsNotExist(err) {
-		t.Fatal("dry run executed the pre-bump hook")
-	}
+	require.NoError(t, Apply(t.Context(), cfg, Patch))
+	_, err := os.Stat(filepath.Join(dir, "hook-ran"))
+	assert.True(t, os.IsNotExist(err))
 }
+
 func TestBumpGoProject(t *testing.T) {
 	dir := initTestRepo(t, map[string]string{
 		"go.mod":     "module example.com/demo\n\ngo 1.27\n",
 		"version.go": "package demo\n\nconst Version = \"1.0.0\"\n",
 	})
-	if err := Apply(t.Context(), Config{Dir: dir, Mode: ModeCommit}, Minor); err != nil {
-		t.Fatalf("Bump: %v", err)
-	}
+	require.NoError(t, Apply(t.Context(), Config{Dir: dir, Mode: ModeCommit}, Minor))
 	source := readTestFile(t, filepath.Join(dir, "version.go"))
-	if !strings.Contains(source, "Version = \"1.1.0\"") {
-		t.Fatalf("version.go was not bumped:\n%s", source)
-	}
-	if tags := gitRun(t, dir, "tag"); tags != "v1.1.0" {
-		t.Fatalf("tags = %q, want v1.1.0", tags)
-	}
+	assert.Contains(t, source, "Version = \"1.1.0\"")
+	assert.Equal(t, "v1.1.0", gitRun(t, dir, "tag"))
 }
 
 func TestBumpPushToOrigin(t *testing.T) {
@@ -368,15 +265,9 @@ func TestBumpPushToOrigin(t *testing.T) {
 	gitRun(t, remote, "symbolic-ref", "HEAD", "refs/heads/main")
 	gitRun(t, dir, "remote", "add", "origin", remote)
 
-	if err := Apply(t.Context(), Config{Dir: dir, Mode: ModePush}, Patch); err != nil {
-		t.Fatalf("Bump: %v", err)
-	}
-	if tags := gitRun(t, remote, "tag"); tags != "v1.0.1" {
-		t.Fatalf("remote tags = %q, want v1.0.1", tags)
-	}
-	if subject := gitRun(t, remote, "log", "-1", "--pretty=%s"); subject != "chore: bump version to 1.0.1" {
-		t.Fatalf("remote subject = %q", subject)
-	}
+	require.NoError(t, Apply(t.Context(), Config{Dir: dir, Mode: ModePush}, Patch))
+	assert.Equal(t, "v1.0.1", gitRun(t, remote, "tag"))
+	assert.Equal(t, "chore: bump version to 1.0.1", gitRun(t, remote, "log", "-1", "--pretty=%s"))
 }
 
 func TestBumpPythonProjectUpdatesModules(t *testing.T) {
@@ -388,20 +279,12 @@ version = '1.0.0'
 		"src/pkg/__init__.py": `__version__ = '1.0.0'
 `,
 	})
-	if err := Apply(t.Context(), Config{Dir: dir, Mode: ModeCommit}, Patch); err != nil {
-		t.Fatalf("Bump: %v", err)
-	}
+	require.NoError(t, Apply(t.Context(), Config{Dir: dir, Mode: ModeCommit}, Patch))
 	manifest := readTestFile(t, filepath.Join(dir, "pyproject.toml"))
-	if !strings.Contains(manifest, "version = '1.0.1'") {
-		t.Fatalf("pyproject.toml was not bumped:\n%s", manifest)
-	}
+	assert.Contains(t, manifest, "version = '1.0.1'")
 	source := readTestFile(t, filepath.Join(dir, "src/pkg/__init__.py"))
-	if !strings.Contains(source, "__version__ = '1.0.1'") {
-		t.Fatalf("__init__.py was not bumped:\n%s", source)
-	}
-	if tags := gitRun(t, dir, "tag"); tags != "v1.0.1" {
-		t.Fatalf("tags = %q, want v1.0.1", tags)
-	}
+	assert.Contains(t, source, "__version__ = '1.0.1'")
+	assert.Equal(t, "v1.0.1", gitRun(t, dir, "tag"))
 }
 
 func TestBumpRustProject(t *testing.T) {
@@ -411,17 +294,12 @@ name = "demo"
 version = "1.0.0"
 `,
 	})
-	if err := Apply(t.Context(), Config{Dir: dir, Mode: ModeCommit}, Minor); err != nil {
-		t.Fatalf("Bump: %v", err)
-	}
+	require.NoError(t, Apply(t.Context(), Config{Dir: dir, Mode: ModeCommit}, Minor))
 	manifest := readTestFile(t, filepath.Join(dir, "Cargo.toml"))
-	if !strings.Contains(manifest, "version = \"1.1.0\"") {
-		t.Fatalf("Cargo.toml was not bumped:\n%s", manifest)
-	}
-	if tags := gitRun(t, dir, "tag"); tags != "v1.1.0" {
-		t.Fatalf("tags = %q, want v1.1.0", tags)
-	}
+	assert.Contains(t, manifest, "version = \"1.1.0\"")
+	assert.Equal(t, "v1.1.0", gitRun(t, dir, "tag"))
 }
+
 func TestBumpPythonNoVersionAttrSkipsModules(t *testing.T) {
 	dir := initTestRepo(t, map[string]string{
 		"pyproject.toml": `[project]
@@ -432,15 +310,9 @@ version = '1.0.0'
 `,
 	})
 	cfg := Config{Dir: dir, Mode: ModeCommit, NoVersionAttr: true}
-	if err := Apply(t.Context(), cfg, Patch); err != nil {
-		t.Fatalf("Bump: %v", err)
-	}
+	require.NoError(t, Apply(t.Context(), cfg, Patch))
 	manifest := readTestFile(t, filepath.Join(dir, "pyproject.toml"))
-	if !strings.Contains(manifest, "version = '1.0.1'") {
-		t.Fatalf("pyproject.toml was not bumped:\n%s", manifest)
-	}
+	assert.Contains(t, manifest, "version = '1.0.1'")
 	source := readTestFile(t, filepath.Join(dir, "src/pkg/__init__.py"))
-	if !strings.Contains(source, "__version__ = '1.0.0'") {
-		t.Fatalf("__init__.py should not be bumped:\n%s", source)
-	}
+	assert.Contains(t, source, "__version__ = '1.0.0'")
 }
