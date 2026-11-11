@@ -10,9 +10,9 @@ import (
 
 	"golang.org/x/mod/modfile"
 
-	"github.com/dayrion/upvert/internal/fileio"
-	"github.com/dayrion/upvert/internal/semver"
-	"github.com/dayrion/upvert/internal/ui"
+	"github.com/cruffinoni/upvert/internal/fileio"
+	"github.com/cruffinoni/upvert/internal/semver"
+	"github.com/cruffinoni/upvert/internal/ui"
 )
 
 // ModulePath returns the module path declared in the go.mod file at path.

@@ -6,8 +6,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/dayrion/upvert/internal/fileio"
-	"github.com/dayrion/upvert/internal/semver"
+	"github.com/cruffinoni/upvert/internal/fileio"
+	"github.com/cruffinoni/upvert/internal/semver"
 )
 
 // ensureTagAvailable rejects a bump whose tag already exists locally.

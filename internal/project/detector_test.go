@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/dayrion/upvert/internal/ecosystem"
+	"github.com/cruffinoni/upvert/internal/ecosystem"
 )
 
 // captureLogger records warnings for detection assertions.

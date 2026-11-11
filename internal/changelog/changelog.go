@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dayrion/upvert/internal/fileio"
-	"github.com/dayrion/upvert/internal/ui"
+	"github.com/cruffinoni/upvert/internal/fileio"
+	"github.com/cruffinoni/upvert/internal/ui"
 )
 
 // header starts every changelog file created by upvert.

@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/dayrion/upvert/internal/ecosystem"
+	"github.com/cruffinoni/upvert/internal/ecosystem"
 )
 
 // writeFile creates a file below dir.

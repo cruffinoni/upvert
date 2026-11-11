@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/dayrion/upvert/internal/semver"
+	"github.com/cruffinoni/upvert/internal/semver"
 )
 
 const (

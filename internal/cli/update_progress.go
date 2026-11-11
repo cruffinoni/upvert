@@ -12,7 +12,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/term"
 
-	"github.com/dayrion/upvert/internal/update"
+	"github.com/cruffinoni/upvert/internal/update"
 )
 
 const (

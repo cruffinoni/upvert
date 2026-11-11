@@ -11,7 +11,7 @@ import (
 
 	msemver "github.com/Masterminds/semver/v3"
 
-	"github.com/dayrion/upvert/internal/semver"
+	"github.com/cruffinoni/upvert/internal/semver"
 )
 
 // Git runs git commands against one repository root.

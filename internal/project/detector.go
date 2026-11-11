@@ -7,11 +7,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/dayrion/upvert/internal/ecosystem"
-	"github.com/dayrion/upvert/internal/ecosystem/golang"
-	"github.com/dayrion/upvert/internal/ecosystem/node"
-	"github.com/dayrion/upvert/internal/ecosystem/python"
-	"github.com/dayrion/upvert/internal/ecosystem/rust"
+	"github.com/cruffinoni/upvert/internal/ecosystem"
+	"github.com/cruffinoni/upvert/internal/ecosystem/golang"
+	"github.com/cruffinoni/upvert/internal/ecosystem/node"
+	"github.com/cruffinoni/upvert/internal/ecosystem/python"
+	"github.com/cruffinoni/upvert/internal/ecosystem/rust"
 )
 
 var (

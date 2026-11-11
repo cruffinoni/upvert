@@ -7,9 +7,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/dayrion/upvert/internal/buildinfo"
-	"github.com/dayrion/upvert/internal/bump"
-	"github.com/dayrion/upvert/internal/ui"
+	"github.com/cruffinoni/upvert/internal/buildinfo"
+	"github.com/cruffinoni/upvert/internal/bump"
+	"github.com/cruffinoni/upvert/internal/ui"
 )
 
 // applyOutput binds the logger to the output and error writers configured on

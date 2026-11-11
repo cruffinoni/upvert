@@ -9,7 +9,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/dayrion/upvert/internal/cli"
+	"github.com/cruffinoni/upvert/internal/cli"
 )
 
 func main() {

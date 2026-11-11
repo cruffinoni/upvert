@@ -1,4 +1,4 @@
-module github.com/dayrion/upvert
+module github.com/cruffinoni/upvert
 
 go 1.27
 

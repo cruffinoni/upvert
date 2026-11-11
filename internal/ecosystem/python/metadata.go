@@ -5,7 +5,7 @@ import (
 
 	"gopkg.in/ini.v1"
 
-	"github.com/dayrion/upvert/internal/toml"
+	"github.com/cruffinoni/upvert/internal/toml"
 )
 
 // pyProjectVersion returns the version declared by pyproject.toml.

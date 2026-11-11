@@ -9,7 +9,7 @@ import (
 	gotoml "github.com/pelletier/go-toml/v2"
 	"github.com/pelletier/go-toml/v2/unstable"
 
-	"github.com/dayrion/upvert/internal/fileio"
+	"github.com/cruffinoni/upvert/internal/fileio"
 )
 
 // edit is one byte replacement inside a TOML document.

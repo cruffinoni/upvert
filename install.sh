@@ -2,7 +2,7 @@
 # Install upvert from GitHub Releases.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/dayrion/upvert/master/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/cruffinoni/upvert/master/install.sh | sh
 #   curl -fsSL .../install.sh | sh -s -- --version vX.Y.Z --bin-dir "$HOME/.local/bin"
 #   ./install.sh --local
 set -eu
@@ -10,7 +10,7 @@ set -eu
 local_mode=0
 version_flag=0
 
-repo="dayrion/upvert"
+repo="cruffinoni/upvert"
 releases_url="https://github.com/${repo}/releases"
 download_url="${releases_url}/download"
 
