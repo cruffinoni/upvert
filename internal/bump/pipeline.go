@@ -181,7 +181,7 @@ func (s *service) syncMultiFiles(version string) error {
 		target.Files = files
 		if _, err := part.Language.Write(s.root, &target, version, s.log); err != nil {
 			if restoreErr := restoreFiles(snapshots); restoreErr != nil {
-				return fmt.Errorf("%w (restore failed: %v)", err, restoreErr)
+				return fmt.Errorf("%w (restore failed: %w)", err, restoreErr)
 			}
 			return err
 		}
@@ -210,14 +210,17 @@ func (s *service) writeSingleVersion(ctx context.Context, version string) error 
 	changed, err := part.Language.Write(s.root, &part.Target, version, s.log)
 	if err != nil {
 		if restoreErr := restoreFiles(snapshots); restoreErr != nil {
-			return fmt.Errorf("%w (restore failed: %v)", err, restoreErr)
+			return fmt.Errorf("%w (restore failed: %w)", err, restoreErr)
 		}
 		return err
 	}
 	updated, verifyErr := part.Language.Read(s.root, &part.Target, s.log)
 	if verifyErr != nil || updated != version {
 		if restoreErr := restoreFiles(snapshots); restoreErr != nil {
-			return fmt.Errorf("verify version update: %w (restore failed: %v)", verifyErr, restoreErr)
+			if verifyErr != nil {
+				return fmt.Errorf("verify version update: %w (restore failed: %w)", verifyErr, restoreErr)
+			}
+			return fmt.Errorf("restore files after failed version update: %w", restoreErr)
 		}
 		if verifyErr != nil {
 			return fmt.Errorf("verify version update: %w", verifyErr)
