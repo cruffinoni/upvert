@@ -3,47 +3,44 @@ package bump
 import (
 	"context"
 	"fmt"
+
+	"github.com/cruffinoni/upvert/internal/report"
 )
 
-// removeTag deletes the local tag and, when origin exists, the remote tag.
-func (s *service) removeTag(ctx context.Context, tag string) error {
+// removeTag deletes the local tag and, when origin exists, the remote tag. It
+// reports whether the local tag existed.
+func (s *service) removeTag(ctx context.Context, tag string) (bool, error) {
 	if !s.git.TagExists(ctx, tag) {
-		s.log.Warnf("Git tag %s not found locally", tag)
-		return nil
+		return false, nil
 	}
-	s.log.Infof("Removing git tag: %s", tag)
 	if err := s.git.DeleteTag(ctx, tag); err != nil {
-		return err
+		return false, err
 	}
-	if !s.git.RemoteExists(ctx, "origin") {
-		return nil
+	if s.git.RemoteExists(ctx, "origin") {
+		if err := s.git.DeleteRemoteTag(ctx, tag); err != nil {
+			s.log.Warnf("Could not remove tag %s from remote (may not exist there)", tag)
+		}
 	}
-	s.log.Infof("Removing tag from remote...")
-	if err := s.git.DeleteRemoteTag(ctx, tag); err != nil {
-		s.log.Warnf("Could not remove tag from remote (may not exist there)")
-		return nil
-	}
-	s.log.Successf("Removed tag %s from remote", tag)
-	return nil
+	return true, nil
 }
 
-// reportRolledBackVersion prints the version restored by the reset.
-func (s *service) reportRolledBackVersion(ctx context.Context) {
+// rolledBackVersion returns the version restored by the reset, or an empty
+// string when it cannot be detected.
+func (s *service) rolledBackVersion(ctx context.Context) string {
 	proj, err := s.detect.Detect(s.root, s.cfg.VersionFile)
 	if err != nil {
-		return
+		return ""
 	}
 	s.proj = proj
 	version, err := s.currentVersion(ctx)
 	if err != nil {
-		return
+		return ""
 	}
-	s.log.Successf("Rolled back to version: %s", version)
+	return version
 }
 
 // rollback reverses the most recent version bump.
 func (s *service) rollback(ctx context.Context) error {
-	s.log.Infof("Checking for last version bump to rollback...")
 	if !s.git.IsRepo(ctx) {
 		return fmt.Errorf("not in a git repository")
 	}
@@ -64,26 +61,41 @@ func (s *service) rollback(ctx context.Context) error {
 	if proj, err := s.detect.Detect(s.root, s.cfg.VersionFile); err == nil {
 		s.proj = proj
 	}
-	s.log.Infof("Found version bump commit for: %s", version)
-	if s.cfg.Mode != ModeApply {
-		s.log.Infof("Would roll back commit: %s", subject)
-		s.log.Infof("Would remove git tag: %s", tag)
-		if s.proj != nil {
-			s.log.Infof("Would restore the previous version in %s", s.proj.Primary().Path)
-		}
-		return nil
+	s.rep = &report.Report{
+		Command: "rollback",
+		Mode:    s.cfg.Mode.String(),
+		Source:  s.sourceLabel(),
 	}
-	if err := s.removeTag(ctx, tag); err != nil {
+	s.rep.Changes = append(s.rep.Changes, report.Change{Path: "work tree", Detail: "reset to HEAD~1"})
+	if s.proj != nil {
+		if primary := s.proj.Primary(); primary.Path != "" {
+			s.rep.Changes = append(s.rep.Changes, report.Change{Path: primary.Path, Detail: "restore previous version"})
+		}
+	}
+	if s.cfg.Mode != ModeApply {
+		s.rep.Release = []report.Step{{Label: "tag", Value: "remove " + tag}}
+		s.rep.Footer = "Nothing was changed. Re-run with --apply to apply."
+		return s.renderReport()
+	}
+	removed, err := s.removeTag(ctx, tag)
+	if err != nil {
 		return err
 	}
-	s.log.Infof("Reverting the version bump commit...")
 	if err := s.git.ResetHard(ctx, "HEAD~1"); err != nil {
 		return err
 	}
-	s.reportRolledBackVersion(ctx)
-	s.log.Warnf("If the commit was already pushed, you may need:")
-	s.log.Warnf("  git push origin HEAD --force-with-lease")
-	return nil
+	restored := s.rolledBackVersion(ctx)
+	tagStep := "removed " + tag
+	if !removed {
+		tagStep = "not found (" + tag + ")"
+	}
+	s.rep.Release = []report.Step{{Label: "tag", Value: tagStep}}
+	footer := "Rolled back."
+	if restored != "" {
+		footer = "Rolled back to " + restored + "."
+	}
+	s.rep.Footer = footer + "\nIf the commit was already pushed, run: git push origin HEAD --force-with-lease"
+	return s.renderReport()
 }
 
 // Rollback reverses the most recent version bump commit, removing its tag and

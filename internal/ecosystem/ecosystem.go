@@ -61,13 +61,6 @@ type Language interface {
 	Write(root string, target *Target, version string, log Logger) (bool, error)
 }
 
-// Describer is implemented by languages that report dry-run detail for a file
-// before the pipeline reports it as updatable.
-type Describer interface {
-	// Describe logs the language-specific detail for file.
-	Describe(root string, file File, log Logger) error
-}
-
 // Extender is implemented by languages that discover additional in-code version
 // declarations after an explicit version file is selected.
 type Extender interface {

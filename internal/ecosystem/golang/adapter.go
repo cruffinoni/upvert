@@ -3,7 +3,6 @@ package golang
 
 import (
 	"errors"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -14,10 +13,7 @@ import (
 // Adapter implements ecosystem.Language for Go projects.
 type Adapter struct{}
 
-var (
-	_ ecosystem.Language  = (*Adapter)(nil)
-	_ ecosystem.Describer = (*Adapter)(nil)
-)
+var _ ecosystem.Language = (*Adapter)(nil)
 
 // New returns a Go language adapter.
 func New() *Adapter {
@@ -121,9 +117,6 @@ func (a *Adapter) Detect(root string, files []string, log ecosystem.Logger) (*ec
 			return detectedTarget(rel), true, nil
 		}
 	}
-	if log != nil {
-		log.Warnf("No static semantic version declaration found in Go sources; using git tags")
-	}
 	return &ecosystem.Target{Kind: ecosystem.Go, Single: true, TagSource: true}, true, nil
 }
 
@@ -192,27 +185,4 @@ func (a *Adapter) Write(root string, target *ecosystem.Target, version string, l
 		changed = changed || updated
 	}
 	return changed, nil
-}
-
-// Describe reports an indirect Version declaration during a dry run.
-func (a *Adapter) Describe(root string, file ecosystem.File, log ecosystem.Logger) error {
-	data, err := os.ReadFile(fileio.Resolve(root, file.Path))
-	if err != nil {
-		return nil
-	}
-	found, err := parseDeclaration(file.Path, data)
-	if err != nil {
-		if isParseError(err) {
-			log.Warnf("Skipping unparseable Go file %s: %v", file.Path, err)
-			return nil
-		}
-		if errors.Is(err, errVersionNotFound) {
-			return nil
-		}
-		return err
-	}
-	if found.Indirect {
-		log.Infof("Version is defined by %s (line %d); would update that declaration", found.TargetName, found.Line)
-	}
-	return nil
 }

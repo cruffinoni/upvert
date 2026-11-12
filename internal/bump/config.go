@@ -59,7 +59,10 @@ type Config struct {
 	PostBump      string
 	Stdout        io.Writer
 	Stderr        io.Writer
-	Color         bool
+	// Color enables ANSI colours in the report written to Stdout.
+	Color bool
+	// LogColor enables ANSI colours in the logger written to Stderr.
+	LogColor bool
 }
 
 // normalised fills defaults, resolves the working directory, and validates the

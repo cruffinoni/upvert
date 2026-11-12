@@ -12,12 +12,13 @@ import (
 	"github.com/cruffinoni/upvert/internal/ui"
 )
 
-// applyOutput binds the logger to the output and error writers configured on
-// cmd, which keeps the engine testable.
+// applyOutput binds the report and logger to the writers configured on cmd,
+// which keeps the engine testable.
 func applyOutput(cmd *cobra.Command, cfg *bump.Config) {
 	cfg.Stdout = cmd.OutOrStdout()
 	cfg.Stderr = cmd.ErrOrStderr()
-	cfg.Color = ui.ColorEnabled(cmd.ErrOrStderr())
+	cfg.Color = ui.ColorEnabled(cmd.OutOrStdout())
+	cfg.LogColor = ui.ColorEnabled(cmd.ErrOrStderr())
 }
 
 // bumpMode resolves the mutually exclusive bump actions.

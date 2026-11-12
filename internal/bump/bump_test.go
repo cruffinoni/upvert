@@ -1,6 +1,7 @@
 package bump
 
 import (
+	"bytes"
 	"io"
 	"os"
 	"path/filepath"
@@ -315,4 +316,54 @@ version = '1.0.0'
 	assert.Contains(t, manifest, "version = '1.0.1'")
 	source := readTestFile(t, filepath.Join(dir, "src/pkg/__init__.py"))
 	assert.Contains(t, source, "__version__ = '1.0.0'")
+}
+
+func TestBumpDoesNotTouchGoModuleFiles(t *testing.T) {
+	dir := initTestRepo(t, map[string]string{
+		"go.mod":     "module example.com/demo\n\ngo 1.27\n\nrequire example.com/dep v1.0.0\n",
+		"go.sum":     "example.com/dep v1.0.0 h1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\n",
+		"version.go": "package demo\n\nconst Version = \"1.0.0\"\n",
+	})
+	beforeMod := readTestFile(t, filepath.Join(dir, "go.mod"))
+	beforeSum := readTestFile(t, filepath.Join(dir, "go.sum"))
+	require.NoError(t, Apply(t.Context(), Config{Dir: dir, Mode: ModeCommit}, Patch))
+	assert.Equal(t, beforeMod, readTestFile(t, filepath.Join(dir, "go.mod")))
+	assert.Equal(t, beforeSum, readTestFile(t, filepath.Join(dir, "go.sum")))
+	files := gitRun(t, dir, "show", "--name-only", "--pretty=format:", "HEAD")
+	assert.NotContains(t, files, "go.mod")
+	assert.NotContains(t, files, "go.sum")
+}
+
+func TestBumpPreviewReport(t *testing.T) {
+	dir := initTestRepo(t, map[string]string{
+		"package.json": "{\"name\":\"demo\",\"version\":\"1.2.3\"}\n",
+	})
+	var stdout, stderr bytes.Buffer
+	cfg := Config{Dir: dir, Stdout: &stdout, Stderr: &stderr}
+	require.NoError(t, Apply(t.Context(), cfg, Minor))
+	for _, want := range []string{
+		"upvert minor (preview)",
+		"  Version   1.2.3 → 1.3.0",
+		"  Source    package.json",
+		"    package.json\n",
+		"    CHANGELOG.md              entry for 1.3.0",
+		"  Release\n",
+		"    tag      v1.3.0\n",
+		"  Nothing was written. Re-run with --write, --commit, or --push.",
+	} {
+		assert.Contains(t, stdout.String(), want)
+	}
+	assert.NotContains(t, stdout.String(), "go mod tidy")
+}
+
+func TestBumpWriteReport(t *testing.T) {
+	dir := initTestRepo(t, map[string]string{
+		"package.json": "{\"name\":\"demo\",\"version\":\"1.2.3\"}\n",
+	})
+	var stdout bytes.Buffer
+	cfg := Config{Dir: dir, Mode: ModeWrite, Stdout: &stdout, Stderr: io.Discard}
+	require.NoError(t, Apply(t.Context(), cfg, Patch))
+	assert.Contains(t, stdout.String(), "upvert patch (write)")
+	assert.Contains(t, stdout.String(), "Files updated. Git was left untouched.")
+	assert.NotContains(t, stdout.String(), "  Release")
 }

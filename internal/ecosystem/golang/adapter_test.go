@@ -1,7 +1,6 @@
 package golang
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -10,8 +9,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/cruffinoni/upvert/internal/ui"
 )
 
 // testLogger records warnings for detection assertions.
@@ -48,14 +45,12 @@ func TestWriteGoVersionFileIndirect(t *testing.T) {
 	path := filepath.Join(dir, "version.go")
 	writeFile(t, dir, "version.go", "package demo\n\nvar buildVersion = \"1.0.0\"\nconst Version = buildVersion\n")
 
-	var output bytes.Buffer
-	changed, err := writeVersionFile(path, "1.1.0", ui.New(&output, false))
+	changed, err := writeVersionFile(path, "1.1.0", nil)
 	require.NoError(t, err)
 	assert.True(t, changed)
 	got := readFile(t, path)
 	assert.Contains(t, got, "var buildVersion = \"1.1.0\"")
 	assert.Contains(t, got, "const Version = buildVersion")
-	assert.Contains(t, output.String(), "buildVersion")
 }
 
 func TestWriteGoVersionFile(t *testing.T) {
@@ -91,14 +86,11 @@ func TestDetectGoProjectWithoutVersionUsesTags(t *testing.T) {
 	writeFile(t, dir, "go.mod", "module example.com/demo\n")
 	writeFile(t, dir, "version.go", "package demo\n\nvar version = \"dev\"\n")
 
-	log := &testLogger{}
-	target, found, err := New().Detect(dir, []string{"go.mod", "version.go"}, log)
+	target, found, err := New().Detect(dir, []string{"go.mod", "version.go"}, &testLogger{})
 	require.NoError(t, err)
 	require.True(t, found)
 	assert.True(t, target.TagSource)
 	assert.Empty(t, target.Files)
-	require.NotEmpty(t, log.warnings)
-	assert.Contains(t, log.warnings[0], "using git tags")
 }
 
 func TestDetectGoProjectWithInjectedVersionUsesTags(t *testing.T) {

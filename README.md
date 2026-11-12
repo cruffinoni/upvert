@@ -60,8 +60,8 @@ $HOME/dev/go-guidelines/gg-lint scan .
 upvert <patch|minor|major|rollback|update|version> [flags]
 ```
 
-The default is a preview that prints a summary of every change it would make.
-Choose one action per run.
+The default is a preview that prints a language-agnostic report of every change
+it would make. Choose one action per run.
 
 ```sh
 upvert patch                          # preview in the current directory
@@ -159,10 +159,40 @@ See `docs/release-versioning.md` for the tag, release, and updater contract.
    clean work tree, version/tag consistency) before touching any file.
 4. Updates the version declarations (tag-sourced projects are left untouched)
    and prepends a dated entry to the changelog.
-5. Runs `go mod tidy` for single-language projects that have a `go.mod`.
-6. `--write` stops after the files, changelog, and hooks. `--commit` also
+5. `--write` stops after the files, changelog, and hooks. `--commit` also
    creates the changed-file commit and annotated tag. `--push` also pushes
    both to `origin`.
+
+upvert never runs `go mod tidy` or any other language tooling. A bump only
+edits the discovered version declarations and the changelog; it does not touch
+`go.mod`, `go.sum`, lockfiles, or module caches.
+
+### Output
+
+Previews and real runs use the same report. The change list and release plan
+stay identical; preview and commit differ only in the heading and the closing
+line. `--write` uses the same layout but omits the release section because it
+leaves git untouched.
+
+```text
+upvert minor (preview)
+  Version   1.2.3 → 1.3.0
+  Source    package.json
+
+  Changes
+    package.json
+    CHANGELOG.md              entry for 1.3.0
+
+  Release
+    tag      v1.3.0
+    commit   chore: bump version to 1.3.0
+
+  Nothing was written. Re-run with --write, --commit, or --push.
+```
+
+`--write` and `--commit` print the same report with `(write)` or `(commit)`
+in the heading and their own closing line. The report goes to standard output;
+warnings and errors stay on standard error.
 
 ### Project detection
 
