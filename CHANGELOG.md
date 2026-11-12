@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.4-alpha.5] - 2026-11-12
+
+### Added
+- Version bump to 0.0.4-alpha.5
+
 ## [0.0.4-alpha.4] - 2026-11-11
 
 ### Added
