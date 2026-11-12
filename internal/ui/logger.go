@@ -13,11 +13,12 @@ import (
 
 // Logger writes levelled messages to a single stream.
 type Logger struct {
-	w       io.Writer
-	info    *color.Color
-	success *color.Color
-	warning *color.Color
-	err     *color.Color
+	w        io.Writer
+	info     *color.Color
+	success  *color.Color
+	warning  *color.Color
+	err      *color.Color
+	progress Progress
 }
 
 // newColor returns a colour that is explicitly enabled or disabled, so logging
@@ -44,10 +45,23 @@ func New(w io.Writer, colorEnabled bool) *Logger {
 	}
 }
 
-// write renders one prefixed line.
+// SetProgress makes the logger clear an active progress line before writing
+// and restore it afterwards. A nil progress disables the coordination.
+func (l *Logger) SetProgress(progress Progress) {
+	l.progress = progress
+}
+
+// write renders one prefixed line without corrupting an active progress line.
 func (l *Logger) write(c *color.Color, prefix, format string, args []any) {
+	progress := l.progress
+	if progress != nil {
+		progress.Pause()
+	}
 	_, _ = fmt.Fprint(l.w, c.Sprint(prefix), " ")
 	_, _ = fmt.Fprintln(l.w, fmt.Sprintf(format, args...))
+	if progress != nil {
+		progress.Resume()
+	}
 }
 
 // Infof formats its arguments according to format and writes an informational
