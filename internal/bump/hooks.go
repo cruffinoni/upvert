@@ -24,8 +24,22 @@ func (s *service) runHook(ctx context.Context, command, label string) error {
 // runPreBumpHook runs the pre-bump hook for real runs and skips it during a
 // preview.
 func (s *service) runPreBumpHook(ctx context.Context, dryRun bool) error {
-	if dryRun {
+	if dryRun || s.cfg.PreBump == "" {
 		return nil
 	}
+	if !s.cfg.Quiet {
+		s.log.Infof("running pre-bump hook")
+	}
 	return s.runHook(ctx, s.cfg.PreBump, "pre-bump hook")
+}
+
+// runPostBumpHook runs the post-bump hook for real runs.
+func (s *service) runPostBumpHook(ctx context.Context) error {
+	if s.cfg.PostBump == "" {
+		return nil
+	}
+	if !s.cfg.Quiet {
+		s.log.Infof("running post-bump hook")
+	}
+	return s.runHook(ctx, s.cfg.PostBump, "post-bump hook")
 }

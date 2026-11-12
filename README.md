@@ -114,6 +114,7 @@ Modifiers:
 | `--message <template>`    | Commit message template containing `{version}`                 |
 | `--pre-bump <cmd>`        | Shell command to run before bumping                            |
 | `--post-bump <cmd>`       | Shell command to run after bumping                             |
+| `--quiet`                 | Suppress step progress; the report is still printed            |
 | `-C, --dir <path>`        | Run as if started in this directory                             |
 
 ```sh
@@ -196,7 +197,14 @@ upvert minor (preview)
 
 `--write` and `--commit` print the same report with `(write)` or `(commit)`
 in the heading and their own closing line. The report goes to standard output;
-warnings and errors stay on standard error.
+warnings, errors, and step progress stay on standard error.
+
+Real runs also report each operation while it happens: writing the version
+files, updating the changelog, committing, tagging, and pushing. On an
+interactive terminal the current step is animated in place and cleared before
+the report, so fast runs look the same as a preview. When standard error is
+redirected, each step is a plain line, which keeps CI logs readable. Preview
+runs print no progress, and `--quiet` suppresses it for real runs.
 
 ### Project detection
 

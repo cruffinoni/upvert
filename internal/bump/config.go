@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/cruffinoni/upvert/internal/semver"
+	"github.com/cruffinoni/upvert/internal/ui"
 )
 
 const (
@@ -63,6 +64,10 @@ type Config struct {
 	Color bool
 	// LogColor enables ANSI colours in the logger written to Stderr.
 	LogColor bool
+	// Quiet suppresses progress written to Stderr for non-preview runs.
+	Quiet bool
+	// Progress receives step feedback for non-preview runs. Nil discards it.
+	Progress ui.Progress
 }
 
 // normalised fills defaults, resolves the working directory, and validates the
@@ -94,6 +99,9 @@ func (c Config) normalised() (Config, error) {
 	}
 	if c.Stderr == nil {
 		c.Stderr = os.Stderr
+	}
+	if c.Quiet || c.Progress == nil {
+		c.Progress = ui.NopProgress()
 	}
 	if c.PreRelease != "" {
 		if err := semver.ValidatePreReleaseLabel(c.PreRelease); err != nil {
