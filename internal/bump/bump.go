@@ -22,6 +22,18 @@ const (
 	Major = semver.Major
 )
 
+// operation selects the version transition applied by one invocation.
+type operation int
+
+const (
+	// opBump advances the numeric core and optionally starts a prerelease.
+	opBump operation = iota
+	// opContinuePreRelease advances the current prerelease on its core.
+	opContinuePreRelease
+	// opPromotePreRelease promotes the current prerelease to stable.
+	opPromotePreRelease
+)
+
 // newService builds the pipeline for one invocation.
 func newService(cfg Config) *service {
 	log := ui.New(cfg.Stderr, cfg.LogColor)
@@ -34,6 +46,16 @@ func newService(cfg Config) *service {
 	}
 }
 
+// validateMode checks that mode is one of the file or git actions.
+func validateMode(mode Mode) error {
+	switch mode {
+	case ModePreview, ModeWrite, ModeCommit, ModePush:
+		return nil
+	default:
+		return fmt.Errorf("invalid bump mode %q", mode)
+	}
+}
+
 // Apply applies the requested version bump according to cfg.
 func Apply(ctx context.Context, cfg Config, kind Kind) error {
 	normalised, err := cfg.normalised()
@@ -43,10 +65,43 @@ func Apply(ctx context.Context, cfg Config, kind Kind) error {
 	if !kind.Valid() {
 		return fmt.Errorf("invalid bump kind %q", kind)
 	}
-	switch normalised.Mode {
-	case ModePreview, ModeWrite, ModeCommit, ModePush:
-	default:
-		return fmt.Errorf("invalid bump mode %q", normalised.Mode)
+	if err := validateMode(normalised.Mode); err != nil {
+		return err
 	}
-	return newService(normalised).run(ctx, kind)
+	svc := newService(normalised)
+	svc.operation = opBump
+	svc.kind = kind
+	return svc.run(ctx)
+}
+
+// ApplyPre continues or relabels the current prerelease according to cfg.
+func ApplyPre(ctx context.Context, cfg Config, label string) error {
+	normalised, err := cfg.normalised()
+	if err != nil {
+		return err
+	}
+	if err := semver.ValidatePreReleaseLabel(label); err != nil {
+		return err
+	}
+	if err := validateMode(normalised.Mode); err != nil {
+		return err
+	}
+	svc := newService(normalised)
+	svc.operation = opContinuePreRelease
+	svc.preLabel = label
+	return svc.run(ctx)
+}
+
+// ApplyRelease promotes the current prerelease to its stable version.
+func ApplyRelease(ctx context.Context, cfg Config) error {
+	normalised, err := cfg.normalised()
+	if err != nil {
+		return err
+	}
+	if err := validateMode(normalised.Mode); err != nil {
+		return err
+	}
+	svc := newService(normalised)
+	svc.operation = opPromotePreRelease
+	return svc.run(ctx)
 }

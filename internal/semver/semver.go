@@ -64,16 +64,11 @@ func splitPreRelease(pre string) (string, int) {
 	return label, counter
 }
 
-// nextPreRelease advances the numeric core and applies the requested
-// pre-release label. The counter continues when the current version already
-// uses the same label.
+// nextPreRelease advances the numeric core and starts the requested
+// pre-release label at counter 1.
 func nextPreRelease(v *semver.Version, kind Kind, label string) (string, error) {
 	base := bumpCore(v, kind)
-	counter := 1
-	if currentLabel, currentCounter := splitPreRelease(v.Prerelease()); currentLabel == label {
-		counter = currentCounter + 1
-	}
-	next, err := base.SetPrerelease(fmt.Sprintf("%s.%d", label, counter))
+	next, err := base.SetPrerelease(fmt.Sprintf("%s.%d", label, 1))
 	if err != nil {
 		return "", fmt.Errorf("invalid pre-release label %q: %w", label, err)
 	}
@@ -91,6 +86,44 @@ func ValidatePreReleaseLabel(label string) error {
 		return fmt.Errorf("invalid pre-release label %q", label)
 	}
 	return nil
+}
+
+// ContinuePreRelease returns the next prerelease on the current numeric core.
+// The counter advances when label is unchanged; a different label starts at 1.
+func ContinuePreRelease(current, label string) (string, error) {
+	v, err := Parse(current)
+	if err != nil {
+		return "", err
+	}
+	if v.Prerelease() == "" {
+		return "", fmt.Errorf("current version %s is not a prerelease", current)
+	}
+	if err := ValidatePreReleaseLabel(label); err != nil {
+		return "", err
+	}
+	counter := 1
+	if currentLabel, currentCounter := splitPreRelease(v.Prerelease()); currentLabel == label {
+		counter = currentCounter + 1
+	}
+	base := semver.New(v.Major(), v.Minor(), v.Patch(), "", "")
+	next, err := base.SetPrerelease(fmt.Sprintf("%s.%d", label, counter))
+	if err != nil {
+		return "", fmt.Errorf("invalid pre-release label %q: %w", label, err)
+	}
+	return next.String(), nil
+}
+
+// PromotePreRelease returns the stable version of the current prerelease's
+// numeric core.
+func PromotePreRelease(current string) (string, error) {
+	v, err := Parse(current)
+	if err != nil {
+		return "", err
+	}
+	if v.Prerelease() == "" {
+		return "", fmt.Errorf("current version %s is not a prerelease", current)
+	}
+	return semver.New(v.Major(), v.Minor(), v.Patch(), "", "").String(), nil
 }
 
 // Valid reports whether k is a supported bump kind.

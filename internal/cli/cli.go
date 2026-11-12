@@ -9,6 +9,7 @@ import (
 
 	"github.com/cruffinoni/upvert/internal/buildinfo"
 	"github.com/cruffinoni/upvert/internal/bump"
+	"github.com/cruffinoni/upvert/internal/semver"
 	"github.com/cruffinoni/upvert/internal/ui"
 )
 
@@ -43,13 +44,15 @@ func bumpMode(write, commit, push bool) (bump.Mode, error) {
 	return mode, nil
 }
 
-// addBumpFlags registers the action and content flags shared by patch, minor,
-// and major.
-func addBumpFlags(cmd *cobra.Command, cfg *bump.Config, write, commit, push *bool) {
+// addActionFlags registers the mutually exclusive file and git actions.
+func addActionFlags(cmd *cobra.Command, write, commit, push *bool) {
 	cmd.Flags().BoolVar(write, "write", false, "update files without committing or tagging")
 	cmd.Flags().BoolVar(commit, "commit", false, "update files, create a release commit, and tag")
 	cmd.Flags().BoolVar(push, "push", false, "commit, tag, and push to origin")
-	cmd.Flags().StringVar(&cfg.PreRelease, "pre", "", "pre-release label (for example alpha, beta, or rc)")
+}
+
+// addModifierFlags registers the content flags shared by every release command.
+func addModifierFlags(cmd *cobra.Command, cfg *bump.Config) {
 	cmd.Flags().StringVar(&cfg.VersionFile, "version-file", "", "file that contains the version string")
 	cmd.Flags().StringVar(&cfg.ChangelogFile, "changelog-file", "", "changelog path (default CHANGELOG.md)")
 	cmd.Flags().BoolVar(&cfg.NoChangelog, "no-changelog", false, "skip the changelog update")
@@ -57,6 +60,14 @@ func addBumpFlags(cmd *cobra.Command, cfg *bump.Config, write, commit, push *boo
 	cmd.Flags().StringVar(&cfg.Message, "message", "", "commit message template with a {version} placeholder")
 	cmd.Flags().StringVar(&cfg.PreBump, "pre-bump", "", "shell command to run before bumping")
 	cmd.Flags().StringVar(&cfg.PostBump, "post-bump", "", "shell command to run after bumping")
+}
+
+// addBumpFlags registers the action and content flags shared by patch, minor,
+// and major.
+func addBumpFlags(cmd *cobra.Command, cfg *bump.Config, write, commit, push *bool) {
+	addActionFlags(cmd, write, commit, push)
+	cmd.Flags().StringVar(&cfg.PreRelease, "pre", "", "pre-release label (for example alpha, beta, or rc)")
+	addModifierFlags(cmd, cfg)
 }
 
 // newBumpCommand returns one of the patch, minor, or major subcommands.
@@ -80,6 +91,48 @@ func newBumpCommand(cfg *bump.Config, kind bump.Kind, use, short string) *cobra.
 		},
 	}
 	addBumpFlags(cmd, cfg, &write, &commit, &push)
+	cmd.Flags().StringVarP(&cfg.Dir, "dir", "C", ".", "run as if started in this directory")
+	return cmd
+}
+
+// newPreCommand returns the prerelease lifecycle subcommand.
+func newPreCommand(cfg *bump.Config) *cobra.Command {
+	var write, commit, push, release bool
+	cmd := &cobra.Command{
+		Use:   "pre [<label>]",
+		Short: "Continue, relabel, or promote the current prerelease",
+		Long: `Continue the current prerelease counter, change its label, or promote it to
+its stable version. The numeric core never changes; use patch, minor, or major
+with --pre to start a prerelease on a new core.`,
+		Args: cobra.MaximumNArgs(1),
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			applyOutput(cmd, cfg)
+			mode, err := bumpMode(write, commit, push)
+			if err != nil {
+				return err
+			}
+			cfg.Mode = mode
+			if release {
+				if len(args) != 0 {
+					return errors.New("--release does not take a prerelease label")
+				}
+				return nil
+			}
+			if len(args) != 1 {
+				return errors.New("provide a prerelease label or --release")
+			}
+			return semver.ValidatePreReleaseLabel(args[0])
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if release {
+				return bump.ApplyRelease(cmd.Context(), *cfg)
+			}
+			return bump.ApplyPre(cmd.Context(), *cfg, args[0])
+		},
+	}
+	addActionFlags(cmd, &write, &commit, &push)
+	addModifierFlags(cmd, cfg)
+	cmd.Flags().BoolVar(&release, "release", false, "promote the current prerelease to its stable version")
 	cmd.Flags().StringVarP(&cfg.Dir, "dir", "C", ".", "run as if started in this directory")
 	return cmd
 }
@@ -133,6 +186,7 @@ func New() *cobra.Command {
 and pushes the result. It understands Go, Node.js, Python, Rust, and
 repositories that mix several of those ecosystems.
 
+Use "upvert pre" to continue, relabel, or promote the current prerelease.
 The default is a preview: upvert reports what it would change and writes
 nothing until --write, --commit, or --push is supplied. Rollback previews
 until --apply is supplied. Use "upvert update" to install a GitHub release.`,
@@ -140,6 +194,8 @@ until --apply is supplied. Use "upvert update" to install a GitHub release.`,
   upvert patch --write             # update files only
   upvert minor --commit            # update, commit, and tag
   upvert patch --pre alpha --commit
+  upvert pre alpha --commit        # continue the current prerelease
+  upvert pre --release --push      # promote it to stable
   upvert minor --push              # update, commit, tag, and push
   upvert rollback --apply          # undo the last bump
   upvert update                    # install the latest stable release`,
@@ -150,6 +206,7 @@ until --apply is supplied. Use "upvert update" to install a GitHub release.`,
 		newBumpCommand(cfg, bump.Patch, "patch", "Increment the patch version (1.0.0 -> 1.0.1)"),
 		newBumpCommand(cfg, bump.Minor, "minor", "Increment the minor version, resetting patch (1.0.0 -> 1.1.0)"),
 		newBumpCommand(cfg, bump.Major, "major", "Increment the major version, resetting minor and patch (1.0.0 -> 2.0.0)"),
+		newPreCommand(cfg),
 		newRollbackCommand(cfg),
 		newUpdateCommand(),
 		newVersionCommand(),

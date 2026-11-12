@@ -19,13 +19,16 @@ import (
 
 // service runs the bump pipeline for one invocation.
 type service struct {
-	cfg    Config
-	root   string
-	log    *ui.Logger
-	git    *vcs.Git
-	detect *project.Detector
-	proj   *project.Layout
-	rep    *report.Report
+	cfg       Config
+	root      string
+	log       *ui.Logger
+	git       *vcs.Git
+	detect    *project.Detector
+	proj      *project.Layout
+	rep       *report.Report
+	operation operation
+	kind      semver.Kind
+	preLabel  string
 }
 
 // applyNoVersionAttr drops auxiliary in-code declarations from a single-language
@@ -307,8 +310,32 @@ func (s *service) renderReport() error {
 	})
 }
 
+// commandLabel names the resolution in the report header.
+func (s *service) commandLabel() string {
+	switch s.operation {
+	case opContinuePreRelease:
+		return "pre"
+	case opPromotePreRelease:
+		return "pre --release"
+	default:
+		return string(s.kind)
+	}
+}
+
+// nextVersion resolves the version transition requested by the invocation.
+func (s *service) nextVersion(current string) (string, error) {
+	switch s.operation {
+	case opContinuePreRelease:
+		return semver.ContinuePreRelease(current, s.preLabel)
+	case opPromotePreRelease:
+		return semver.PromotePreRelease(current)
+	default:
+		return semver.Next(current, s.kind, s.cfg.PreRelease)
+	}
+}
+
 // run executes the full bump pipeline for the configured mode.
-func (s *service) run(ctx context.Context, kind semver.Kind) error {
+func (s *service) run(ctx context.Context) error {
 	preview := s.cfg.Mode == ModePreview
 	proj, err := s.detect.Detect(s.root, s.cfg.VersionFile)
 	if err != nil {
@@ -330,7 +357,7 @@ func (s *service) run(ctx context.Context, kind semver.Kind) error {
 	if err != nil {
 		return err
 	}
-	next, err := semver.Next(current, kind, s.cfg.PreRelease)
+	next, err := s.nextVersion(current)
 	if err != nil {
 		return err
 	}
@@ -339,7 +366,7 @@ func (s *service) run(ctx context.Context, kind semver.Kind) error {
 		return err
 	}
 	s.rep = &report.Report{
-		Command: string(kind),
+		Command: s.commandLabel(),
 		Mode:    s.cfg.Mode.String(),
 		From:    current,
 		To:      next,
@@ -352,11 +379,24 @@ func (s *service) run(ctx context.Context, kind semver.Kind) error {
 			return fmt.Errorf("current version (%s) differs from latest tag (%s); align them before bumping", current, latest)
 		}
 	}
+	if latest != "" {
+		comparison, err := semver.Compare(next, latest)
+		if err != nil {
+			return err
+		}
+		if comparison <= 0 {
+			if preview {
+				s.addNote("new version %s is not greater than latest tag v%s", next, latest)
+			} else {
+				return fmt.Errorf("new version %s is not greater than latest tag v%s", next, latest)
+			}
+		}
+	}
 	if err := s.ensureTagAvailable(ctx, next); err != nil {
 		return err
 	}
 	if s.cfg.Mode == ModeCommit || s.cfg.Mode == ModePush {
-		if err := s.validateEnvironment(ctx, next); err != nil {
+		if err := s.validateEnvironment(ctx); err != nil {
 			return err
 		}
 	}

@@ -142,6 +142,59 @@ func TestBumpPreRelease(t *testing.T) {
 	assert.Equal(t, "v1.1.0-alpha.1", gitRun(t, dir, "tag"))
 }
 
+func TestBumpStartsNewCorePreRelease(t *testing.T) {
+	dir := initTestRepo(t, map[string]string{
+		"package.json": "{\"name\":\"demo\",\"version\":\"1.0.0\"}\n",
+	})
+	cfg := Config{Dir: dir, Mode: ModeCommit, PreRelease: "alpha"}
+	require.NoError(t, Apply(t.Context(), cfg, Patch))
+	manifest := readTestFile(t, filepath.Join(dir, "package.json"))
+	assert.Contains(t, manifest, "\"version\":\"1.0.1-alpha.1\"")
+	require.NoError(t, Apply(t.Context(), cfg, Patch))
+	manifest = readTestFile(t, filepath.Join(dir, "package.json"))
+	assert.Contains(t, manifest, "\"version\":\"1.0.2-alpha.1\"")
+	assert.Contains(t, gitRun(t, dir, "tag"), "v1.0.2-alpha.1")
+}
+
+func TestPreLifecycle(t *testing.T) {
+	dir := initTestRepo(t, map[string]string{
+		"package.json": "{\"name\":\"demo\",\"version\":\"1.0.0\"}\n",
+	})
+	bumpCfg := Config{Dir: dir, Mode: ModeCommit, PreRelease: "alpha"}
+	require.NoError(t, Apply(t.Context(), bumpCfg, Patch))
+	preCfg := Config{Dir: dir, Mode: ModeCommit}
+	require.NoError(t, ApplyPre(t.Context(), preCfg, "alpha"))
+	manifest := readTestFile(t, filepath.Join(dir, "package.json"))
+	assert.Contains(t, manifest, "\"version\":\"1.0.1-alpha.2\"")
+	require.NoError(t, ApplyPre(t.Context(), preCfg, "beta"))
+	manifest = readTestFile(t, filepath.Join(dir, "package.json"))
+	assert.Contains(t, manifest, "\"version\":\"1.0.1-beta.1\"")
+	require.NoError(t, ApplyRelease(t.Context(), preCfg))
+	manifest = readTestFile(t, filepath.Join(dir, "package.json"))
+	assert.Contains(t, manifest, "\"version\":\"1.0.1\"")
+	assert.Contains(t, gitRun(t, dir, "tag"), "v1.0.1")
+}
+
+func TestPreRequiresExistingPreRelease(t *testing.T) {
+	dir := initTestRepo(t, map[string]string{
+		"package.json": "{\"name\":\"demo\",\"version\":\"1.0.0\"}\n",
+	})
+	cfg := Config{Dir: dir, Mode: ModeCommit}
+	err := ApplyPre(t.Context(), cfg, "alpha")
+	require.ErrorContains(t, err, "not a prerelease")
+	err = ApplyRelease(t.Context(), cfg)
+	require.ErrorContains(t, err, "not a prerelease")
+}
+
+func TestPreRejectsDowngrade(t *testing.T) {
+	dir := initTestRepo(t, map[string]string{
+		"package.json": "{\"name\":\"demo\",\"version\":\"1.0.1-beta.1\"}\n",
+	})
+	gitRun(t, dir, "tag", "v1.0.1-beta.1")
+	err := ApplyPre(t.Context(), Config{Dir: dir, Mode: ModeCommit}, "alpha")
+	require.ErrorContains(t, err, "not greater than latest tag")
+}
+
 func TestBumpRejectsDirtyWorkTree(t *testing.T) {
 	dir := initTestRepo(t, map[string]string{
 		"package.json": "{\"name\":\"demo\",\"version\":\"1.2.3\"}\n",

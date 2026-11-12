@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/cruffinoni/upvert/internal/fileio"
-	"github.com/cruffinoni/upvert/internal/semver"
 )
 
 // ensureTagAvailable rejects a bump whose tag already exists locally.
@@ -59,7 +58,7 @@ func (s *service) push(ctx context.Context, version string) error {
 
 // validateEnvironment blocks a bump that would produce an invalid repository
 // state before any file is modified.
-func (s *service) validateEnvironment(ctx context.Context, version string) error {
+func (s *service) validateEnvironment(ctx context.Context) error {
 	if !s.git.IsRepo(ctx) {
 		return fmt.Errorf("not in a git repository")
 	}
@@ -78,20 +77,6 @@ func (s *service) validateEnvironment(ctx context.Context, version string) error
 	}
 	if status != "" {
 		return fmt.Errorf("working directory has uncommitted changes; commit or stash them first")
-	}
-	latest, err := s.git.LatestTag(ctx)
-	if err != nil {
-		return err
-	}
-	if latest == "" {
-		return nil
-	}
-	comparison, err := semver.Compare(version, latest)
-	if err != nil {
-		return err
-	}
-	if comparison <= 0 {
-		return fmt.Errorf("new version %s is not greater than latest tag v%s", version, latest)
 	}
 	return nil
 }
