@@ -1,11 +1,9 @@
-// Package gomod maintains go.mod for Go projects during a bump.
+// Package gomod inspects go.mod so a bump can warn about major-version module
+// paths.
 package gomod
 
 import (
-	"context"
 	"fmt"
-	"io"
-	"os/exec"
 	"strings"
 
 	"golang.org/x/mod/modfile"
@@ -29,36 +27,6 @@ func ModulePath(path string) (string, error) {
 		return "", nil
 	}
 	return file.Module.Mod.Path, nil
-}
-
-// TidyOptions controls one go mod tidy invocation.
-type TidyOptions struct {
-	Root   string
-	DryRun bool
-	Stdout io.Writer
-	Stderr io.Writer
-	Log    *ui.Logger
-}
-
-// Tidy runs go mod tidy in Root when go.mod exists.
-func Tidy(ctx context.Context, opts TidyOptions) error {
-	if !fileio.Exists(fileio.Resolve(opts.Root, "go.mod")) {
-		return nil
-	}
-	if opts.DryRun {
-		opts.Log.Infof("Would run 'go mod tidy'")
-		return nil
-	}
-	opts.Log.Infof("Running 'go mod tidy'...")
-	command := exec.CommandContext(ctx, "go", "mod", "tidy")
-	command.Dir = opts.Root
-	command.Stdout = opts.Stdout
-	command.Stderr = opts.Stderr
-	if err := command.Run(); err != nil {
-		return fmt.Errorf("go mod tidy failed: %w", err)
-	}
-	opts.Log.Successf("Go module dependencies synced")
-	return nil
 }
 
 // ValidateModulePath warns when a major bump needs a /vN module suffix.

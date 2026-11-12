@@ -24,7 +24,7 @@ const (
 
 // newService builds the pipeline for one invocation.
 func newService(cfg Config) *service {
-	log := ui.New(cfg.Stderr, cfg.Color)
+	log := ui.New(cfg.Stderr, cfg.LogColor)
 	return &service{
 		cfg:    cfg,
 		root:   cfg.Dir,

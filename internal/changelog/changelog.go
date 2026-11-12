@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/cruffinoni/upvert/internal/fileio"
-	"github.com/cruffinoni/upvert/internal/ui"
 )
 
 // header starts every changelog file created by upvert.
@@ -47,9 +46,8 @@ func insertEntry(existing, entry string) string {
 // Update prepends a release entry to the changelog at path, creating the file
 // with a standard header when it does not exist yet. It does not write during a
 // dry run.
-func Update(path, name, version string, dryRun bool, log *ui.Logger) error {
+func Update(path, name, version string, dryRun bool) error {
 	if dryRun {
-		log.Infof("Would add entry to %s for version %s", name, version)
 		return nil
 	}
 	mode := fs.FileMode(0o644)
@@ -63,9 +61,5 @@ func Update(path, name, version string, dryRun bool, log *ui.Logger) error {
 	entry := fmt.Sprintf("## [%s] - %s\n\n### Added\n- Version bump to %s\n\n",
 		version, time.Now().Format(time.DateOnly), version)
 	content := insertEntry(string(existing), entry)
-	if err := fileio.WriteAtomic(path, []byte(content), mode); err != nil {
-		return err
-	}
-	log.Successf("Updated %s with version %s", name, version)
-	return nil
+	return fileio.WriteAtomic(path, []byte(content), mode)
 }

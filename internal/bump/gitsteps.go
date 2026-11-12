@@ -24,14 +24,6 @@ func (s *service) filesToCommit() []string {
 	for _, file := range s.proj.Files() {
 		files = append(files, file.Path)
 	}
-	if !s.proj.IsMulti() {
-		if fileio.Exists(fileio.Resolve(s.root, "go.mod")) {
-			files = append(files, "go.mod")
-		}
-		if fileio.Exists(fileio.Resolve(s.root, "go.sum")) {
-			files = append(files, "go.sum")
-		}
-	}
 	if !s.cfg.NoChangelog && fileio.Exists(fileio.Resolve(s.root, s.cfg.ChangelogFile)) {
 		files = append(files, s.cfg.ChangelogFile)
 	}
@@ -48,22 +40,13 @@ func (s *service) commit(ctx context.Context, version string) error {
 	if err := s.git.Add(ctx, files...); err != nil {
 		return err
 	}
-	if err := s.git.Commit(ctx, message); err != nil {
-		return err
-	}
-	s.log.Successf("Committed: %s", message)
-	return nil
+	return s.git.Commit(ctx, message)
 }
 
 // createTag creates the annotated release tag.
 func (s *service) createTag(ctx context.Context, version string) error {
 	tag := "v" + version
-	if err := s.git.CreateTag(ctx, tag, "Release version "+version); err != nil {
-		return err
-	}
-	s.log.Successf("Created git tag: %s", tag)
-	s.log.Infof("To push: git push origin HEAD && git push origin %s", tag)
-	return nil
+	return s.git.CreateTag(ctx, tag, "Release version "+version)
 }
 
 // push publishes the bump commit and its tag to origin.
@@ -71,11 +54,7 @@ func (s *service) push(ctx context.Context, version string) error {
 	if err := s.git.Push(ctx, "HEAD"); err != nil {
 		return err
 	}
-	if err := s.git.Push(ctx, "v"+version); err != nil {
-		return err
-	}
-	s.log.Successf("Pushed commit and tag v%s to origin", version)
-	return nil
+	return s.git.Push(ctx, "v"+version)
 }
 
 // validateEnvironment blocks a bump that would produce an invalid repository

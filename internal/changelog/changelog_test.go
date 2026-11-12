@@ -1,7 +1,6 @@
 package changelog
 
 import (
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,8 +9,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/cruffinoni/upvert/internal/ui"
 )
 
 // readFile returns the content of path.
@@ -31,8 +28,7 @@ func writeFile(t *testing.T, dir, name, content string) {
 func TestUpdateCreatesFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "CHANGELOG.md")
-	log := ui.New(io.Discard, false)
-	require.NoError(t, Update(path, "CHANGELOG.md", "1.2.3", false, log))
+	require.NoError(t, Update(path, "CHANGELOG.md", "1.2.3", false))
 	content := readFile(t, path)
 	assert.Equal(t, 1, strings.Count(content, "# Changelog"))
 	wantEntry := "## [1.2.3] - " + time.Now().Format(time.DateOnly)
@@ -45,8 +41,7 @@ func TestUpdatePrependsEntry(t *testing.T) {
 	initial := "# Changelog\n\nAll notable changes to this project will be documented in this file.\n\n## [1.0.0] - 2024-01-01\n\n### Added\n- Initial release\n"
 	writeFile(t, dir, "CHANGELOG.md", initial)
 	path := filepath.Join(dir, "CHANGELOG.md")
-	log := ui.New(io.Discard, false)
-	require.NoError(t, Update(path, "CHANGELOG.md", "1.1.0", false, log))
+	require.NoError(t, Update(path, "CHANGELOG.md", "1.1.0", false))
 	content := readFile(t, path)
 	assert.Equal(t, 1, strings.Count(content, "# Changelog"))
 	newIndex := strings.Index(content, "## [1.1.0]")
@@ -62,8 +57,7 @@ func TestUpdatePreservesMinimalHeader(t *testing.T) {
 	initial := "# Changelog\n\n## [1.0.0] - 2024-01-01\n\n- Old release note\n"
 	writeFile(t, dir, "CHANGELOG.md", initial)
 	path := filepath.Join(dir, "CHANGELOG.md")
-	log := ui.New(io.Discard, false)
-	require.NoError(t, Update(path, "CHANGELOG.md", "1.1.0", false, log))
+	require.NoError(t, Update(path, "CHANGELOG.md", "1.1.0", false))
 	content := readFile(t, path)
 	assert.Contains(t, content, "## [1.0.0]")
 	assert.Contains(t, content, "- Old release note")
@@ -75,8 +69,7 @@ func TestUpdatePreservesCustomPreamble(t *testing.T) {
 	initial := "# Releases\n\nCustom introduction.\n\n## [1.0.0] - 2024-01-01\n\n- Old note\n"
 	writeFile(t, dir, "CHANGELOG.md", initial)
 	path := filepath.Join(dir, "CHANGELOG.md")
-	log := ui.New(io.Discard, false)
-	require.NoError(t, Update(path, "CHANGELOG.md", "1.1.0", false, log))
+	require.NoError(t, Update(path, "CHANGELOG.md", "1.1.0", false))
 	content := readFile(t, path)
 	for _, want := range []string{"# Releases", "Custom introduction.", "## [1.0.0]", "- Old note", "## [1.1.0]"} {
 		assert.Contains(t, content, want)
@@ -88,8 +81,7 @@ func TestUpdateAppendsWithoutSections(t *testing.T) {
 	initial := "# Changelog\n\nNo sections yet.\n"
 	writeFile(t, dir, "CHANGELOG.md", initial)
 	path := filepath.Join(dir, "CHANGELOG.md")
-	log := ui.New(io.Discard, false)
-	require.NoError(t, Update(path, "CHANGELOG.md", "1.1.0", false, log))
+	require.NoError(t, Update(path, "CHANGELOG.md", "1.1.0", false))
 	content := readFile(t, path)
 	for _, want := range []string{"No sections yet.", "## [1.1.0]"} {
 		assert.Contains(t, content, want)
@@ -99,8 +91,7 @@ func TestUpdateAppendsWithoutSections(t *testing.T) {
 func TestUpdateDryRunWritesNothing(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "CHANGELOG.md")
-	log := ui.New(io.Discard, false)
-	require.NoError(t, Update(path, "CHANGELOG.md", "1.2.3", true, log))
+	require.NoError(t, Update(path, "CHANGELOG.md", "1.2.3", true))
 	_, err := os.Stat(path)
 	assert.True(t, os.IsNotExist(err))
 }

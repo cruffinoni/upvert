@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/cruffinoni/upvert/internal/changelog"
 	"github.com/cruffinoni/upvert/internal/ecosystem"
 	"github.com/cruffinoni/upvert/internal/fileio"
 	"github.com/cruffinoni/upvert/internal/gomod"
 	"github.com/cruffinoni/upvert/internal/project"
+	"github.com/cruffinoni/upvert/internal/report"
 	"github.com/cruffinoni/upvert/internal/semver"
 	"github.com/cruffinoni/upvert/internal/ui"
 	"github.com/cruffinoni/upvert/internal/vcs"
@@ -23,6 +25,7 @@ type service struct {
 	git    *vcs.Git
 	detect *project.Detector
 	proj   *project.Layout
+	rep    *report.Report
 }
 
 // applyNoVersionAttr drops auxiliary in-code declarations from a single-language
@@ -84,39 +87,6 @@ func (s *service) currentVersion(ctx context.Context) (string, error) {
 	}
 	part := &s.proj.Parts[0]
 	return part.Language.Read(s.root, &part.Target, s.log)
-}
-
-// reportVersionUpdates reports the file writes that a real run would perform.
-func (s *service) reportVersionUpdates(version string) error {
-	if !s.proj.IsMulti() {
-		if len(s.proj.Parts) == 0 || len(s.proj.Parts[0].Target.Files) == 0 {
-			return nil
-		}
-		part := s.proj.Parts[0]
-		file := part.Target.Files[0]
-		if describer, ok := part.Language.(ecosystem.Describer); ok {
-			if err := describer.Describe(s.root, file, s.log); err != nil {
-				return err
-			}
-		}
-		s.log.Infof("Would update %s: → %s", file.Path, version)
-		return nil
-	}
-	for _, part := range s.proj.Parts {
-		for _, file := range part.Target.Files {
-			if s.cfg.NoVersionAttr && file.InCode {
-				s.log.Infof("Would skip in-code version declaration: %s", file.Path)
-				continue
-			}
-			if describer, ok := part.Language.(ecosystem.Describer); ok {
-				if err := describer.Describe(s.root, file, s.log); err != nil {
-					return err
-				}
-			}
-			s.log.Infof("Would update %s: → %s", file.Path, version)
-		}
-	}
-	return nil
 }
 
 // fileSnapshot stores one file's content and permissions so a failed bump can
@@ -186,73 +156,61 @@ func (s *service) syncMultiFiles(version string) error {
 			return err
 		}
 	}
-	for _, file := range s.proj.Files() {
-		s.log.Successf("Synchronized %s: → %s", file.Path, version)
-	}
 	return nil
 }
 
 // writeSingleVersion updates the version file of a single-language project and
-// verifies the result, restoring every written file on mismatch.
-func (s *service) writeSingleVersion(ctx context.Context, version string) error {
+// verifies the result, restoring every written file on mismatch. It reports
+// whether any file changed.
+func (s *service) writeSingleVersion(version string) (bool, error) {
 	if len(s.proj.Parts) == 0 || len(s.proj.Parts[0].Target.Files) == 0 {
-		return fmt.Errorf("project has no version file")
+		return false, fmt.Errorf("project has no version file")
 	}
 	part := &s.proj.Parts[0]
 	primary := part.Target.Files[0]
 	if s.cfg.NoVersionAttr && primary.InCode {
-		return fmt.Errorf("no writable version declaration in %s", primary.Path)
+		return false, fmt.Errorf("no writable version declaration in %s", primary.Path)
 	}
 	snapshots, err := s.snapshotFiles(part.Target.Files)
 	if err != nil {
-		return err
+		return false, err
 	}
 	changed, err := part.Language.Write(s.root, &part.Target, version, s.log)
 	if err != nil {
 		if restoreErr := restoreFiles(snapshots); restoreErr != nil {
-			return fmt.Errorf("%w (restore failed: %w)", err, restoreErr)
+			return false, fmt.Errorf("%w (restore failed: %w)", err, restoreErr)
 		}
-		return err
+		return false, err
 	}
 	updated, verifyErr := part.Language.Read(s.root, &part.Target, s.log)
 	if verifyErr != nil || updated != version {
 		if restoreErr := restoreFiles(snapshots); restoreErr != nil {
 			if verifyErr != nil {
-				return fmt.Errorf("verify version update: %w (restore failed: %w)", verifyErr, restoreErr)
+				return false, fmt.Errorf("verify version update: %w (restore failed: %w)", verifyErr, restoreErr)
 			}
-			return fmt.Errorf("restore files after failed version update: %w", restoreErr)
+			return false, fmt.Errorf("restore files after failed version update: %w", restoreErr)
 		}
 		if verifyErr != nil {
-			return fmt.Errorf("verify version update: %w", verifyErr)
+			return false, fmt.Errorf("verify version update: %w", verifyErr)
 		}
-		return fmt.Errorf("version update verification failed (expected %s, got %s)", version, updated)
+		return false, fmt.Errorf("version update verification failed (expected %s, got %s)", version, updated)
 	}
-	for _, file := range part.Target.Files[1:] {
-		if file.InCode {
-			s.log.Successf("Updated in-code version in %s: → %s", file.Path, version)
-		}
-	}
-	if changed {
-		s.log.Successf("Updated %s: → %s", primary.Path, version)
-	} else {
-		s.log.Infof("No static version declaration in %s; left unchanged", primary.Path)
-	}
-	return nil
+	return changed, nil
 }
 
 // updateVersionFiles writes every version declaration, or reports the writes a
-// dry run would perform.
-func (s *service) updateVersionFiles(ctx context.Context, version string, dryRun bool) error {
+// dry run would perform. It reports whether any version declaration changed.
+func (s *service) updateVersionFiles(version string, dryRun bool) (bool, error) {
 	if dryRun {
-		return s.reportVersionUpdates(version)
+		return true, nil
 	}
 	if s.proj.IsMulti() {
-		return s.syncMultiFiles(version)
+		return true, s.syncMultiFiles(version)
 	}
 	if s.proj.UsesTags() {
-		return nil
+		return false, nil
 	}
-	return s.writeSingleVersion(ctx, version)
+	return s.writeSingleVersion(version)
 }
 
 // updateChangelog prepends the release entry unless the changelog is disabled.
@@ -261,10 +219,95 @@ func (s *service) updateChangelog(version string, dryRun bool) error {
 		return nil
 	}
 	path := fileio.Resolve(s.root, s.cfg.ChangelogFile)
-	return changelog.Update(path, s.cfg.ChangelogFile, version, dryRun, s.log)
+	return changelog.Update(path, s.cfg.ChangelogFile, version, dryRun)
 }
 
-// bump runs the full bump pipeline for the configured mode.
+// sourceLabel returns the version source shown at the top of the report.
+func (s *service) sourceLabel() string {
+	if s.proj == nil {
+		return ""
+	}
+	if s.proj.UsesTags() {
+		return "git tags"
+	}
+	return s.proj.Primary().Path
+}
+
+// versionChanges lists the version files a bump writes.
+func (s *service) versionChanges() []report.Change {
+	if s.proj == nil {
+		return nil
+	}
+	var changes []report.Change
+	for _, part := range s.proj.Parts {
+		for _, file := range s.writableFiles(part.Target.Files) {
+			changes = append(changes, report.Change{Path: file.Path})
+		}
+	}
+	return changes
+}
+
+// addHookStep records one hook result for the report.
+func (s *service) addHookStep(label, value string) {
+	if s.rep == nil {
+		return
+	}
+	s.rep.Hooks = append(s.rep.Hooks, report.Step{Label: label, Value: value})
+}
+
+// addNote records a diagnostic line for the report.
+func (s *service) addNote(format string, args ...any) {
+	if s.rep == nil {
+		return
+	}
+	s.rep.Notes = append(s.rep.Notes, fmt.Sprintf(format, args...))
+}
+
+// releaseSteps describes the tag and commit, and the push when requested.
+func (s *service) releaseSteps(version string, push bool) []report.Step {
+	steps := []report.Step{
+		{Label: "tag", Value: "v" + version},
+		{Label: "commit", Value: strings.ReplaceAll(s.cfg.Message, versionPlaceholder, version)},
+	}
+	if push {
+		steps = append(steps, report.Step{Label: "push", Value: "origin"})
+	}
+	return steps
+}
+
+// previewFooter describes the next actions available after a preview.
+func (s *service) previewFooter() string {
+	if s.proj != nil && s.proj.UsesTags() {
+		return "Nothing was written. Re-run with --commit or --push."
+	}
+	return "Nothing was written. Re-run with --write, --commit, or --push."
+}
+
+// successFooter closes a completed run.
+func (s *service) successFooter(version string) string {
+	tag := "v" + version
+	switch s.cfg.Mode {
+	case ModePush:
+		return "Committed, tagged, and pushed " + tag + "."
+	case ModeCommit:
+		return "Committed and tagged " + tag + ".\nPush with: git push origin HEAD && git push origin " + tag
+	default:
+		return "Files updated. Git was left untouched."
+	}
+}
+
+// renderReport writes the global view for the completed pipeline.
+func (s *service) renderReport() error {
+	if s.rep == nil {
+		return nil
+	}
+	return report.Render(s.cfg.Stdout, *s.rep, report.Options{
+		Color: s.cfg.Color,
+		ASCII: report.ASCII(),
+	})
+}
+
+// run executes the full bump pipeline for the configured mode.
 func (s *service) run(ctx context.Context, kind semver.Kind) error {
 	preview := s.cfg.Mode == ModePreview
 	proj, err := s.detect.Detect(s.root, s.cfg.VersionFile)
@@ -273,11 +316,11 @@ func (s *service) run(ctx context.Context, kind semver.Kind) error {
 	}
 	s.proj = proj
 	if proj.UsesTags() && s.cfg.Mode == ModeWrite {
-		kind := "tag-sourced"
+		label := "tag-sourced"
 		if proj.IsMulti() {
-			kind = "multi-language"
+			label = "multi-language"
 		}
-		return fmt.Errorf("%s projects require a tag; use --commit or --push", kind)
+		return fmt.Errorf("%s projects require a tag; use --commit or --push", label)
 	}
 	s.applyNoVersionAttr()
 	if !s.proj.UsesTags() && s.cfg.NoVersionAttr && !s.hasWritableVersion() {
@@ -287,20 +330,24 @@ func (s *service) run(ctx context.Context, kind semver.Kind) error {
 	if err != nil {
 		return err
 	}
-	s.log.Infof("Current version: %s", current)
-	s.log.Infof("Project type:   %s", proj.Kind)
 	next, err := semver.Next(current, kind, s.cfg.PreRelease)
 	if err != nil {
 		return err
 	}
-	s.log.Infof("New version:     %s", next)
 	latest, err := s.git.LatestTag(ctx)
 	if err != nil {
 		return err
 	}
+	s.rep = &report.Report{
+		Command: string(kind),
+		Mode:    s.cfg.Mode.String(),
+		From:    current,
+		To:      next,
+		Source:  s.sourceLabel(),
+	}
 	if latest != "" && latest != current {
 		if preview {
-			s.log.Warnf("Current version (%s) differs from latest tag (%s)", current, latest)
+			s.addNote("current version %s differs from latest tag %s", current, latest)
 		} else {
 			return fmt.Errorf("current version (%s) differs from latest tag (%s); align them before bumping", current, latest)
 		}
@@ -313,40 +360,58 @@ func (s *service) run(ctx context.Context, kind semver.Kind) error {
 			return err
 		}
 	}
+	if preview {
+		if s.cfg.PreBump != "" {
+			s.addHookStep("pre-bump", "skipped (preview)")
+		}
+		if s.cfg.PostBump != "" {
+			s.addHookStep("post-bump", "skipped (preview)")
+		}
+	}
 	if err := s.runPreBumpHook(ctx, preview); err != nil {
 		return err
 	}
-	if err := s.updateVersionFiles(ctx, next, preview); err != nil {
+	if !preview && s.cfg.PreBump != "" {
+		s.addHookStep("pre-bump", "ran")
+	}
+	changed, err := s.updateVersionFiles(next, preview)
+	if err != nil {
 		return err
+	}
+	if changed || preview {
+		s.rep.Changes = append(s.rep.Changes, s.versionChanges()...)
+	} else if !s.proj.UsesTags() {
+		s.addNote("no static version declaration in %s; left unchanged", s.proj.Primary().Path)
 	}
 	if err := s.updateChangelog(next, preview); err != nil {
 		return err
 	}
-	if !proj.IsMulti() {
-		if err := gomod.Tidy(ctx, gomod.TidyOptions{
-			Root:   s.root,
-			DryRun: preview,
-			Stdout: s.cfg.Stdout,
-			Stderr: s.cfg.Stderr,
-			Log:    s.log,
-		}); err != nil {
-			return err
-		}
-	}
-	if preview {
-		s.printSummary(current, next, kind, latest)
-		s.log.Infof("Preview completed. Use --write, --commit, or --push to apply.")
-		return nil
+	if s.cfg.NoChangelog {
+		s.addNote("changelog skipped (--no-changelog)")
+	} else {
+		s.rep.Changes = append(s.rep.Changes, report.Change{Path: s.cfg.ChangelogFile, Detail: "entry for " + next})
 	}
 	if err := gomod.ValidateModulePath(s.root, next, s.log); err != nil {
 		return err
+	}
+	if preview {
+		s.rep.Release = s.releaseSteps(next, false)
+		s.rep.Footer = s.previewFooter()
+		return s.renderReport()
 	}
 	if s.cfg.Mode == ModeWrite {
 		if err := s.runHook(ctx, s.cfg.PostBump, "post-bump hook"); err != nil {
 			return err
 		}
-		s.log.Successf("Version written: %s → %s", current, next)
-		return nil
+		if s.cfg.PostBump != "" {
+			s.addHookStep("post-bump", "ran")
+		}
+		if len(s.rep.Changes) == 0 {
+			s.rep.Footer = "No files were updated."
+		} else {
+			s.rep.Footer = s.successFooter(next)
+		}
+		return s.renderReport()
 	}
 	if err := s.commit(ctx, next); err != nil {
 		return err
@@ -362,6 +427,10 @@ func (s *service) run(ctx context.Context, kind semver.Kind) error {
 	if err := s.runHook(ctx, s.cfg.PostBump, "post-bump hook"); err != nil {
 		return err
 	}
-	s.log.Successf("Version bumped: %s → %s", current, next)
-	return nil
+	if s.cfg.PostBump != "" {
+		s.addHookStep("post-bump", "ran")
+	}
+	s.rep.Release = s.releaseSteps(next, s.cfg.Mode == ModePush)
+	s.rep.Footer = s.successFooter(next)
+	return s.renderReport()
 }
