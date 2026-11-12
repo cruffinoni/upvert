@@ -57,7 +57,7 @@ $HOME/dev/go-guidelines/gg-lint scan .
 ## Usage
 
 ```text
-upvert <patch|minor|major|rollback|update|version> [flags]
+upvert <patch|minor|major|pre|rollback|update|version> [flags]
 ```
 
 The default is a preview that prints a language-agnostic report of every change
@@ -67,7 +67,9 @@ it would make. Choose one action per run.
 upvert patch                          # preview in the current directory
 upvert patch --write                  # update files only
 upvert minor --commit                 # update, commit, and tag
-upvert patch --pre alpha --commit     # update to the next alpha prerelease
+upvert patch --pre alpha --commit     # start an alpha on the next patch core
+upvert pre alpha --commit             # continue the current alpha
+upvert pre --release --commit         # promote the current prerelease
 upvert minor --push                   # update, commit, tag, and push
 upvert rollback --apply               # undo the last bump commit and tag
 upvert patch -C ../other-repo         # operate on another repository
@@ -80,6 +82,7 @@ upvert patch -C ../other-repo         # operate on another repository
 | `patch`    | Increment the patch version (1.0.0 -> 1.0.1)                            |
 | `minor`    | Increment the minor version, resetting patch (1.0.0 -> 1.1.0)           |
 | `major`    | Increment the major version, resetting minor and patch (1.0.0 -> 2.0.0) |
+| `pre`      | Continue, relabel, or promote the current prerelease                      |
 | `rollback` | Remove the last bump tag and reset the work tree (use `--apply`)          |
 | `update`   | Install a GitHub release, latest stable by default                      |
 | `version`  | Print the upvert version, commit, and build time                        |
@@ -96,13 +99,14 @@ Actions are mutually exclusive; the default is a preview.
 | `--apply`  | Perform a `rollback` (the default is a preview) |
 
 `--apply` is only valid on `rollback`. `--write`, `--commit`, and `--push`
-are only valid on `patch`, `minor`, and `major`.
+are valid on `patch`, `minor`, `major`, and `pre`.
 
 Modifiers:
 
 | Flag                      | Description                                                    |
 |---------------------------|----------------------------------------------------------------|
-| `--pre <label>`           | Pre-release label (for example `alpha`, `beta`, or `rc`)       |
+| `--pre <label>`           | Start a prerelease on the bumped core                          |
+| `--release`               | Promote the current prerelease to stable (`pre` only)          |
 | `--version-file <path>`   | Explicit version file instead of auto-detection                |
 | `--changelog-file <path>` | Changelog path (default `CHANGELOG.md`)                        |
 | `--no-changelog`          | Skip the changelog update                                      |
@@ -110,7 +114,7 @@ Modifiers:
 | `--message <template>`    | Commit message template containing `{version}`                 |
 | `--pre-bump <cmd>`        | Shell command to run before bumping                            |
 | `--post-bump <cmd>`       | Shell command to run after bumping                             |
-| `-C, --dir <path>`        | Run as if started in this directory (bump/rollback only)        |
+| `-C, --dir <path>`        | Run as if started in this directory                             |
 
 ```sh
 upvert update [--version <tag>] [--bin-dir <dir>] [--no-path-update] [--quiet]
@@ -221,13 +225,17 @@ point `--version-file` at a supported file, to opt into file updates.
 
 ```sh
 upvert patch --pre alpha --commit    # 1.0.0 -> 1.0.1-alpha.1
-upvert patch --pre alpha --commit    # 1.0.1-alpha.1 -> 1.0.2-alpha.2
-upvert minor --pre beta --commit     # 1.0.2-alpha.2 -> 1.1.0-beta.1
+upvert pre alpha --commit            # 1.0.1-alpha.1 -> 1.0.1-alpha.2
+upvert pre beta --commit             # 1.0.1-alpha.2 -> 1.0.1-beta.1
+upvert pre --release --commit        # 1.0.1-beta.1 -> 1.0.1
+upvert minor --pre beta --commit     # 1.0.1 -> 1.1.0-beta.1
 ```
 
-The counter continues when the label does not change; changing the label
-starts at `.1`. The numeric core advances once per invocation, preserving the
-original script's arithmetic.
+`--pre` always starts a prerelease at `.1` on the version produced by the
+bump. `upvert pre <label>` continues or relabels the current prerelease
+without changing its numeric core, and `upvert pre --release` promotes it to
+stable. The `pre` command also accepts `--write`, `--commit`, `--push`, the
+changelog and hook modifiers, and `-C`.
 
 ## Behavioural differences from the script
 
@@ -243,6 +251,10 @@ messages. The intentional differences are:
 - **Hooks do not run during a preview.** The script ran `--pre-bump` even when
   it promised that "no changes will be made". Both hooks now run only with
   `--write`, `--commit`, or `--push`.
+- **Prereleases have their own command.** `--pre` starts a prerelease on the
+  bumped core; `upvert pre <label>` continues or relabels it without moving
+  the core, and `upvert pre --release` promotes it. The original script
+  advanced the core on every invocation.
 - **No `jq` dependency.** `package.json` and `package-lock.json` are edited in
   place and keep their existing formatting and key order.
 - **Rollback understands custom commit messages.** The rollback pattern is

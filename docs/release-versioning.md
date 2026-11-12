@@ -37,19 +37,21 @@ publishing.
 
 ## Prerelease arithmetic
 
-Upvert preserves its original semver arithmetic: a bump advances the numeric
-core and then applies the prerelease label.
+A bump with `--pre` advances the numeric core and starts the label at `.1`.
+`upvert pre <label>` continues or relabels the current prerelease without
+changing its core; `upvert pre --release` promotes it to stable. Minor and
+major always advance the core.
 
 ```text
-1.0.0 -> 1.0.1-alpha.1
-1.0.1-alpha.1 -> 1.0.2-alpha.2
-1.0.2-alpha.2 -> 1.1.0-beta.1   (minor)
+1.0.0 -> 1.0.1-alpha.1           (patch --pre alpha)
+1.0.1-alpha.1 -> 1.0.1-alpha.2   (pre alpha)
+1.0.1-alpha.2 -> 1.0.1-beta.1    (pre beta)
+1.0.1-beta.1 -> 1.0.1            (pre --release)
+1.0.1 -> 1.1.0-beta.1            (minor --pre beta)
 ```
 
-This means upvert does not promote `v1.0.1-rc.1` to `v1.0.1` with another
-bump; it would advance the core. If a same-core stable tag is required, create
-and push that tag explicitly after reviewing the release. Do not reuse a
-published tag.
+`upvert pre --release` promotes on the same core, so `v1.0.1-rc.1` becomes
+`v1.0.1`. Review the release first and do not reuse a published tag.
 
 ## CI and publishing
 

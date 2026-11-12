@@ -108,6 +108,38 @@ func TestCLIUnknownCommand(t *testing.T) {
 	assert.Error(t, cmd.ExecuteContext(t.Context()))
 }
 
+func TestCLIPreRequiresLabelOrRelease(t *testing.T) {
+	cmd := New()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"pre"})
+	err := cmd.ExecuteContext(t.Context())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "provide a prerelease label or --release")
+}
+
+func TestCLIPreReleaseRejectsLabel(t *testing.T) {
+	cmd := New()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"pre", "--release", "alpha"})
+	err := cmd.ExecuteContext(t.Context())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "does not take a prerelease label")
+}
+
+func TestCLIPreHelpShowsLifecycle(t *testing.T) {
+	cmd := New()
+	var stdout bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"pre", "--help"})
+	require.NoError(t, cmd.ExecuteContext(t.Context()))
+	for _, want := range []string{"pre [<label>]", "--release", "--write", "--commit", "--push"} {
+		assert.Contains(t, stdout.String(), want)
+	}
+}
+
 func TestCLIVersion(t *testing.T) {
 	version, commit, builtAt := buildinfo.Version, buildinfo.Commit, buildinfo.BuiltAt
 	buildinfo.Version = "1.2.3"
@@ -137,7 +169,7 @@ func TestCLIHelpListsCommands(t *testing.T) {
 	cmd.SetErr(&bytes.Buffer{})
 	cmd.SetArgs([]string{"--help"})
 	require.NoError(t, cmd.ExecuteContext(t.Context()))
-	for _, command := range []string{"patch", "minor", "major", "rollback", "update"} {
+	for _, command := range []string{"patch", "minor", "major", "pre", "rollback", "update"} {
 		assert.Contains(t, stdout.String(), command)
 	}
 }
@@ -166,6 +198,7 @@ func TestCLIDirFlagIsScopedToBumpAndRollback(t *testing.T) {
 		assert.Equal(t, want, strings.Contains(stdout.String(), "--dir"), "%v", args)
 	}
 	check([]string{"patch", "--help"}, true)
+	check([]string{"pre", "--help"}, true)
 	check([]string{"rollback", "--help"}, true)
 	check([]string{"update", "--help"}, false)
 	check([]string{"version", "--help"}, false)
