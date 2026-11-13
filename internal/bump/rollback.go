@@ -77,11 +77,17 @@ func (s *service) rollback(ctx context.Context) error {
 		s.rep.Footer = "Nothing was changed. Re-run with --apply to apply."
 		return s.renderReport()
 	}
-	removed, err := s.removeTag(ctx, tag)
-	if err != nil {
+	var removed bool
+	if err := s.runStep("removing tag", tag, func() error {
+		var stepErr error
+		removed, stepErr = s.removeTag(ctx, tag)
+		return stepErr
+	}); err != nil {
 		return err
 	}
-	if err := s.git.ResetHard(ctx, "HEAD~1"); err != nil {
+	if err := s.runStep("resetting work tree", "HEAD~1", func() error {
+		return s.git.ResetHard(ctx, "HEAD~1")
+	}); err != nil {
 		return err
 	}
 	restored := s.rolledBackVersion(ctx)

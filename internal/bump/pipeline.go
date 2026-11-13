@@ -22,6 +22,7 @@ type service struct {
 	cfg       Config
 	root      string
 	log       *ui.Logger
+	progress  ui.Progress
 	git       *vcs.Git
 	detect    *project.Detector
 	proj      *project.Layout
@@ -225,17 +226,6 @@ func (s *service) updateChangelog(version string, dryRun bool) error {
 	return changelog.Update(path, s.cfg.ChangelogFile, version, dryRun)
 }
 
-// sourceLabel returns the version source shown at the top of the report.
-func (s *service) sourceLabel() string {
-	if s.proj == nil {
-		return ""
-	}
-	if s.proj.UsesTags() {
-		return "git tags"
-	}
-	return s.proj.Primary().Path
-}
-
 // versionChanges lists the version files a bump writes.
 func (s *service) versionChanges() []report.Change {
 	if s.proj == nil {
@@ -248,6 +238,50 @@ func (s *service) versionChanges() []report.Change {
 		}
 	}
 	return changes
+}
+
+// writeVersionFiles applies the version declarations and reports the step for
+// real runs.
+func (s *service) writeVersionFiles(version string, preview bool) (bool, error) {
+	if preview {
+		return s.updateVersionFiles(version, true)
+	}
+	changes := s.versionChanges()
+	if len(changes) == 0 {
+		return s.updateVersionFiles(version, false)
+	}
+	paths := make([]string, 0, len(changes))
+	for _, change := range changes {
+		paths = append(paths, change.Path)
+	}
+	var changed bool
+	err := s.runStep("writing version files", strings.Join(paths, ", "), func() error {
+		var stepErr error
+		changed, stepErr = s.updateVersionFiles(version, false)
+		return stepErr
+	})
+	return changed, err
+}
+
+// writeChangelog updates the changelog and reports the step for real runs.
+func (s *service) writeChangelog(version string, preview bool) error {
+	if preview {
+		return s.updateChangelog(version, true)
+	}
+	return s.runStep("updating changelog", s.cfg.ChangelogFile, func() error {
+		return s.updateChangelog(version, false)
+	})
+}
+
+// sourceLabel returns the version source shown at the top of the report.
+func (s *service) sourceLabel() string {
+	if s.proj == nil {
+		return ""
+	}
+	if s.proj.UsesTags() {
+		return "git tags"
+	}
+	return s.proj.Primary().Path
 }
 
 // addHookStep records one hook result for the report.
@@ -414,7 +448,7 @@ func (s *service) run(ctx context.Context) error {
 	if !preview && s.cfg.PreBump != "" {
 		s.addHookStep("pre-bump", "ran")
 	}
-	changed, err := s.updateVersionFiles(next, preview)
+	changed, err := s.writeVersionFiles(next, preview)
 	if err != nil {
 		return err
 	}
@@ -423,12 +457,12 @@ func (s *service) run(ctx context.Context) error {
 	} else if !s.proj.UsesTags() {
 		s.addNote("no static version declaration in %s; left unchanged", s.proj.Primary().Path)
 	}
-	if err := s.updateChangelog(next, preview); err != nil {
-		return err
-	}
 	if s.cfg.NoChangelog {
 		s.addNote("changelog skipped (--no-changelog)")
 	} else {
+		if err := s.writeChangelog(next, preview); err != nil {
+			return err
+		}
 		s.rep.Changes = append(s.rep.Changes, report.Change{Path: s.cfg.ChangelogFile, Detail: "entry for " + next})
 	}
 	if err := gomod.ValidateModulePath(s.root, next, s.log); err != nil {
@@ -440,7 +474,7 @@ func (s *service) run(ctx context.Context) error {
 		return s.renderReport()
 	}
 	if s.cfg.Mode == ModeWrite {
-		if err := s.runHook(ctx, s.cfg.PostBump, "post-bump hook"); err != nil {
+		if err := s.runPostBumpHook(ctx); err != nil {
 			return err
 		}
 		if s.cfg.PostBump != "" {
@@ -453,10 +487,14 @@ func (s *service) run(ctx context.Context) error {
 		}
 		return s.renderReport()
 	}
-	if err := s.commit(ctx, next); err != nil {
+	if err := s.runStep("committing", s.commitMessage(next), func() error {
+		return s.commit(ctx, next)
+	}); err != nil {
 		return err
 	}
-	if err := s.createTag(ctx, next); err != nil {
+	if err := s.runStep("tagging", "v"+next, func() error {
+		return s.createTag(ctx, next)
+	}); err != nil {
 		return err
 	}
 	if s.cfg.Mode == ModePush {
@@ -464,7 +502,7 @@ func (s *service) run(ctx context.Context) error {
 			return err
 		}
 	}
-	if err := s.runHook(ctx, s.cfg.PostBump, "post-bump hook"); err != nil {
+	if err := s.runPostBumpHook(ctx); err != nil {
 		return err
 	}
 	if s.cfg.PostBump != "" {

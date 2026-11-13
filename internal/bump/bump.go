@@ -37,12 +37,18 @@ const (
 // newService builds the pipeline for one invocation.
 func newService(cfg Config) *service {
 	log := ui.New(cfg.Stderr, cfg.LogColor)
+	progress := cfg.Progress
+	if progress == nil || cfg.Mode == ModePreview {
+		progress = ui.NopProgress()
+	}
+	log.SetProgress(progress)
 	return &service{
-		cfg:    cfg,
-		root:   cfg.Dir,
-		log:    log,
-		git:    vcs.New(cfg.Dir),
-		detect: project.NewDetector(log),
+		cfg:      cfg,
+		root:     cfg.Dir,
+		log:      log,
+		progress: progress,
+		git:      vcs.New(cfg.Dir),
+		detect:   project.NewDetector(log),
 	}
 }
 

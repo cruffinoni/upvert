@@ -20,6 +20,10 @@ func applyOutput(cmd *cobra.Command, cfg *bump.Config) {
 	cfg.Stderr = cmd.ErrOrStderr()
 	cfg.Color = ui.ColorEnabled(cmd.OutOrStdout())
 	cfg.LogColor = ui.ColorEnabled(cmd.ErrOrStderr())
+	cfg.Progress = ui.NewProgress(cmd.ErrOrStderr(), ui.ProgressOptions{
+		Quiet:     cfg.Quiet,
+		Transient: true,
+	})
 }
 
 // bumpMode resolves the mutually exclusive bump actions.
@@ -60,6 +64,7 @@ func addModifierFlags(cmd *cobra.Command, cfg *bump.Config) {
 	cmd.Flags().StringVar(&cfg.Message, "message", "", "commit message template with a {version} placeholder")
 	cmd.Flags().StringVar(&cfg.PreBump, "pre-bump", "", "shell command to run before bumping")
 	cmd.Flags().StringVar(&cfg.PostBump, "post-bump", "", "shell command to run after bumping")
+	cmd.Flags().BoolVar(&cfg.Quiet, "quiet", false, "suppress step progress; print only the report and errors")
 }
 
 // addBumpFlags registers the action and content flags shared by patch, minor,
@@ -160,6 +165,7 @@ func newRollbackCommand(cfg *bump.Config) *cobra.Command {
 	cmd.Flags().StringVarP(&cfg.Dir, "dir", "C", ".", "run as if started in this directory")
 	cmd.Flags().StringVar(&cfg.VersionFile, "version-file", "", "file that contains the version string")
 	cmd.Flags().StringVar(&cfg.Message, "message", "", "commit message template used by the bump")
+	cmd.Flags().BoolVar(&cfg.Quiet, "quiet", false, "suppress step progress; print only the report and errors")
 	return cmd
 }
 

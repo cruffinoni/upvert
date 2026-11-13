@@ -214,3 +214,67 @@ func TestCLIRollbackHelpShowsApply(t *testing.T) {
 	assert.Contains(t, stdout.String(), "--apply")
 	assert.NotContains(t, stdout.String(), "--commit")
 }
+
+func TestCLIWriteReportsProgressOnStderr(t *testing.T) {
+	dir := t.TempDir()
+	writeProjectFile(t, dir, "package.json", "{\"name\":\"demo\",\"version\":\"1.0.0\"}\n")
+
+	cmd := New()
+	var stdout, stderr bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{"patch", "--dir", dir, "--write"})
+	require.NoErrorf(t, cmd.ExecuteContext(t.Context()), "execute:\n%s", stderr.String())
+
+	assert.Contains(t, stderr.String(), "writing version files")
+	assert.Contains(t, stderr.String(), "package.json")
+	assert.Contains(t, stderr.String(), "updating changelog")
+	assert.NotContains(t, stdout.String(), "writing version files")
+	assert.Contains(t, stdout.String(), "upvert patch (write)")
+}
+
+func TestCLIQuietSuppressesProgress(t *testing.T) {
+	dir := t.TempDir()
+	writeProjectFile(t, dir, "package.json", "{\"name\":\"demo\",\"version\":\"1.0.0\"}\n")
+
+	cmd := New()
+	var stdout, stderr bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{"patch", "--dir", dir, "--write", "--quiet", "--pre-bump", "true", "--post-bump", "true"})
+	require.NoErrorf(t, cmd.ExecuteContext(t.Context()), "execute:\n%s", stderr.String())
+
+	assert.Empty(t, stderr.String())
+	assert.Contains(t, stdout.String(), "upvert patch (write)")
+}
+
+func TestCLIPreviewReportsNoProgress(t *testing.T) {
+	dir := t.TempDir()
+	writeProjectFile(t, dir, "package.json", "{\"name\":\"demo\",\"version\":\"1.0.0\"}\n")
+
+	cmd := New()
+	var stdout, stderr bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{"patch", "--dir", dir})
+	require.NoErrorf(t, cmd.ExecuteContext(t.Context()), "execute:\n%s", stderr.String())
+
+	assert.Empty(t, stderr.String())
+	assert.Contains(t, stdout.String(), "upvert patch (preview)")
+}
+
+func TestCLIQuietFlagRegistered(t *testing.T) {
+	for _, args := range [][]string{
+		{"patch", "--help"},
+		{"pre", "--help"},
+		{"rollback", "--help"},
+	} {
+		cmd := New()
+		var stdout bytes.Buffer
+		cmd.SetOut(&stdout)
+		cmd.SetErr(&bytes.Buffer{})
+		cmd.SetArgs(args)
+		require.NoError(t, cmd.ExecuteContext(t.Context()))
+		assert.Contains(t, stdout.String(), "--quiet", "%v", args)
+	}
+}

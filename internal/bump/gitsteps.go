@@ -29,9 +29,14 @@ func (s *service) filesToCommit() []string {
 	return files
 }
 
+// commitMessage renders the configured commit message for version.
+func (s *service) commitMessage(version string) string {
+	return strings.ReplaceAll(s.cfg.Message, versionPlaceholder, version)
+}
+
 // commit stages the files produced by the bump and creates the commit.
 func (s *service) commit(ctx context.Context, version string) error {
-	message := strings.ReplaceAll(s.cfg.Message, versionPlaceholder, version)
+	message := s.commitMessage(version)
 	files := s.filesToCommit()
 	if len(files) == 0 {
 		return fmt.Errorf("nothing to commit")
@@ -50,10 +55,14 @@ func (s *service) createTag(ctx context.Context, version string) error {
 
 // push publishes the bump commit and its tag to origin.
 func (s *service) push(ctx context.Context, version string) error {
-	if err := s.git.Push(ctx, "HEAD"); err != nil {
+	if err := s.runStep("pushing commit", "origin HEAD", func() error {
+		return s.git.Push(ctx, "HEAD")
+	}); err != nil {
 		return err
 	}
-	return s.git.Push(ctx, "v"+version)
+	return s.runStep("pushing tag", "origin v"+version, func() error {
+		return s.git.Push(ctx, "v"+version)
+	})
 }
 
 // validateEnvironment blocks a bump that would produce an invalid repository
