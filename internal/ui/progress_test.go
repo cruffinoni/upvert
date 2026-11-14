@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -254,4 +255,66 @@ func TestTerminalProgressTransientFailurePrintsCompletedSteps(t *testing.T) {
 
 	assert.Contains(t, out.String(), "writing... package.json")
 	assert.Contains(t, out.String(), "tagging... failed")
+}
+
+func TestTerminalProgressPaintsFirstFrameImmediately(t *testing.T) {
+	var out bytes.Buffer
+	reporter := &terminalProgress{out: &out, width: 80}
+
+	reporter.Start("committing")
+	reporter.Close()
+
+	assert.Contains(t, out.String(), "committing...")
+}
+
+func TestTerminalProgressShowsPositionAndElapsed(t *testing.T) {
+	var out bytes.Buffer
+	now := time.Date(2026, 11, 14, 0, 0, 0, 0, time.UTC)
+	reporter := &terminalProgress{out: &out, width: 80, clock: func() time.Time { return now }}
+
+	reporter.Steps(4)
+	reporter.Start("writing version files")
+	now = now.Add(3 * time.Second)
+	reporter.Start("committing")
+	now = now.Add(14 * time.Second)
+	reporter.mu.Lock()
+	reporter.renderLocked()
+	reporter.mu.Unlock()
+	reporter.Close()
+
+	rendered := out.String()
+	assert.Contains(t, rendered, "(1/4)")
+	assert.Contains(t, rendered, "(2/4)")
+	assert.Contains(t, rendered, "14s")
+}
+
+func TestTerminalProgressDownloadsHaveNoStepCounter(t *testing.T) {
+	var out bytes.Buffer
+	reporter := &terminalProgress{out: &out, width: 100}
+
+	reporter.Start("download")
+	reporter.Total(2048)
+	reporter.Advance(1024)
+	reporter.mu.Lock()
+	reporter.renderLocked()
+	reporter.mu.Unlock()
+	reporter.Close()
+
+	rendered := out.String()
+	assert.Contains(t, rendered, "50%")
+	assert.NotContains(t, rendered, "0s")
+	assert.NotContains(t, rendered, "(1/")
+}
+
+func TestTerminalProgressCloseClearsActiveLine(t *testing.T) {
+	var out bytes.Buffer
+	reporter := &terminalProgress{out: &out, width: 80}
+
+	reporter.Start("tagging")
+	out.Reset()
+	reporter.Close()
+
+	assert.Contains(t, out.String(), "\r")
+	assert.NotContains(t, out.String(), "tagging")
+	assert.False(t, reporter.active)
 }

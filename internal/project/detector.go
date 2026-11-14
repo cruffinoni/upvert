@@ -4,7 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
+	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/cruffinoni/upvert/internal/ecosystem"
@@ -21,11 +24,13 @@ var (
 	// multiOrder is the report and stage order used for multi-language projects.
 	multiOrder = []ecosystem.Kind{ecosystem.Node, ecosystem.Python, ecosystem.Rust, ecosystem.Go}
 
-	// skipDirs holds directory names that never carry release metadata.
+	// skipDirs holds directory names that never carry release metadata when a
+	// directory is scanned outside a git work tree.
 	skipDirs = map[string]struct{}{
+		".cache":        {},
 		".git":          {},
-		".claude":       {},
 		".next":         {},
+		".tmp":          {},
 		".tox":          {},
 		".venv":         {},
 		"build":         {},
@@ -44,12 +49,45 @@ func skipDir(name string) bool {
 	if _, ok := skipDirs[name]; ok {
 		return true
 	}
+	if strings.HasPrefix(name, ".") {
+		return true
+	}
 	return strings.HasSuffix(name, ".egg-info")
 }
 
-// listFiles returns every file below root that can carry release metadata, as
-// slash-separated paths relative to root.
-func listFiles(root string) ([]string, error) {
+// gitFiles lists the files git tracks or would track, as slash-separated paths
+// relative to root. The repository ignore rules decide what is excluded, so
+// generated and scratch trees stay invisible even when they contain manifests.
+// It reports false when root is not inside a work tree.
+func gitFiles(root string) ([]string, bool) {
+	output, err := exec.Command("git", "-C", root, "ls-files", "-z", "--cached", "--others", "--exclude-standard").Output()
+	if err != nil {
+		return nil, false
+	}
+	seen := make(map[string]struct{})
+	files := make([]string, 0, 128)
+	for _, entry := range strings.Split(string(output), "\x00") {
+		if entry == "" {
+			continue
+		}
+		if _, ok := seen[entry]; ok {
+			continue
+		}
+		seen[entry] = struct{}{}
+		info, err := os.Lstat(filepath.Join(root, filepath.FromSlash(entry)))
+		if err != nil || info.IsDir() {
+			continue
+		}
+		files = append(files, entry)
+	}
+	sort.Strings(files)
+	return files, true
+}
+
+// walkFiles returns every file below root that can carry release metadata, as
+// slash-separated paths relative to root. It skips generated trees by name and
+// is used outside a git work tree.
+func walkFiles(root string) ([]string, error) {
 	var files []string
 	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -72,6 +110,16 @@ func listFiles(root string) ([]string, error) {
 		return nil, fmt.Errorf("list project files: %w", err)
 	}
 	return files, nil
+}
+
+// listFiles returns every file below root that can carry release metadata.
+// Inside a git work tree the index and its ignore rules are authoritative;
+// elsewhere a filesystem walk skips generated directories.
+func listFiles(root string) ([]string, error) {
+	if files, ok := gitFiles(root); ok {
+		return files, nil
+	}
+	return walkFiles(root)
 }
 
 // dedupeLogger suppresses repeated warning messages while delegating every

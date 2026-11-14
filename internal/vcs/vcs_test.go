@@ -40,3 +40,49 @@ func TestHighestVersionTag(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "1.10.0", fromTags)
 }
+
+// initWorkTree creates an initialized repository below a temporary directory.
+func initWorkTree(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	gitTest(t, dir, "init", "-q", "-b", "main")
+	return dir
+}
+
+// commitWorkTree stages every file and commits it with a test identity.
+func commitWorkTree(t *testing.T, dir, message string) {
+	t.Helper()
+	gitTest(t, dir, "add", "-A")
+	gitTest(t, dir, "-c", "user.name=Upvert Test", "-c", "user.email=upvert@example.com", "commit", "-q", "-m", message)
+}
+
+func TestEnsureStageableRejectsIgnoredUntrackedFile(t *testing.T) {
+	dir := initWorkTree(t)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".gitignore"), []byte("scratch/\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "tracked.go"), []byte("package demo\n"), 0o644))
+	commitWorkTree(t, dir, "initial commit")
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "scratch"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "scratch", "gen.go"), []byte("package scratch\n"), 0o644))
+
+	git := New(dir)
+	ctx := t.Context()
+	err := git.EnsureStageable(ctx, "scratch/gen.go")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "ignored")
+	require.NoError(t, git.EnsureStageable(ctx, "tracked.go"))
+}
+
+func TestEnsureStageableAcceptsTrackedIgnoredFile(t *testing.T) {
+	dir := initWorkTree(t)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "keep.log"), []byte("kept\n"), 0o644))
+	commitWorkTree(t, dir, "track the log")
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".gitignore"), []byte("*.log\n"), 0o644))
+	commitWorkTree(t, dir, "ignore logs")
+
+	git := New(dir)
+	ctx := t.Context()
+	ignored, err := git.IsIgnored(ctx, "keep.log")
+	require.NoError(t, err)
+	assert.False(t, ignored, "tracked files are stageable even when an exclude rule matches")
+	require.NoError(t, git.EnsureStageable(ctx, "keep.log"))
+}

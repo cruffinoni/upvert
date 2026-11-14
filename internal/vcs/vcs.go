@@ -161,3 +161,45 @@ func (g *Git) ResetHard(ctx context.Context, ref string) error {
 	_, err := g.run(ctx, "reset", "--hard", ref)
 	return err
 }
+
+// ResetMixed moves HEAD to ref while keeping the work tree unchanged.
+func (g *Git) ResetMixed(ctx context.Context, ref string) error {
+	_, err := g.run(ctx, "reset", "--quiet", "--mixed", ref)
+	return err
+}
+
+// Unstage removes paths from the index without touching the work tree.
+func (g *Git) Unstage(ctx context.Context, paths ...string) error {
+	if len(paths) == 0 {
+		return nil
+	}
+	_, err := g.run(ctx, append([]string{"reset", "--quiet", "--"}, paths...)...)
+	return err
+}
+
+// IsIgnored reports whether git ignores path. Tracked files are never reported
+// as ignored, because git stages them even when an exclude rule matches.
+func (g *Git) IsIgnored(ctx context.Context, path string) (bool, error) {
+	command := exec.CommandContext(ctx, "git", "-C", g.root, "check-ignore", "--quiet", "--", path)
+	err := command.Run()
+	if err == nil {
+		return true, nil
+	}
+	if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
+		return false, nil
+	}
+	return false, fmt.Errorf("git check-ignore %s: %w", path, err)
+}
+
+// EnsureStageable reports whether git would stage path. Ignored untracked
+// files are refused with an actionable error.
+func (g *Git) EnsureStageable(ctx context.Context, path string) error {
+	ignored, err := g.IsIgnored(ctx, path)
+	if err != nil {
+		return err
+	}
+	if !ignored {
+		return nil
+	}
+	return fmt.Errorf("%s is ignored by git; update the ignore rules or pass another path", path)
+}

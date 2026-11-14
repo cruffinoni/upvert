@@ -201,10 +201,14 @@ warnings, errors, and step progress stay on standard error.
 
 Real runs also report each operation while it happens: writing the version
 files, updating the changelog, committing, tagging, and pushing. On an
-interactive terminal the current step is animated in place and cleared before
-the report, so fast runs look the same as a preview. When standard error is
-redirected, each step is a plain line, which keeps CI logs readable. Preview
-runs print no progress, and `--quiet` suppresses it for real runs.
+interactive terminal a single animated line names the current step, shows its
+position in the run, and counts the seconds spent on it, so a slow hook or push
+is immediately identifiable; the line is cleared before the report. Because the
+line is painted as soon as a step starts, a fast run shows one brief line while
+a stuck step keeps its label and elapsed time on screen. When standard error is
+redirected, each step is a plain line, which keeps CI logs readable. A run that
+fails after writing restores the files it touched, so the work tree is left as
+it was. Preview runs print no progress, and `--quiet` suppresses it for real runs.
 
 ### Project detection
 
@@ -220,8 +224,11 @@ A repository with more than one ecosystem is treated as having one platform
 version. Every discovered declaration is synchronized, including
 `package-lock.json`, `[tool.poetry]`, `[workspace.package]`, and nested Python
 modules. Generated trees such as `.git`, `node_modules`, `vendor`, `venv`,
-`build`, `dist`, and `*.egg-info` are ignored. An untagged multi-language
-repository starts from `0.0.0`, so the first `patch` bump produces `0.0.1`.
+`build`, `dist`, and `*.egg-info` are ignored, and inside a git work tree the
+repository ignore rules decide what counts as a project file, so scratch
+directories and local fixtures can never be mistaken for manifests. An
+untagged multi-language repository starts from `0.0.0`, so the first `patch`
+bump produces `0.0.1`.
 
 Go projects without a static semantic `Version` declaration — common when
 GoReleaser injects the version with `-ldflags -X` — use git tags as the version

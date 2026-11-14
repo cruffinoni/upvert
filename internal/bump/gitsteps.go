@@ -44,13 +44,21 @@ func (s *service) commit(ctx context.Context, version string) error {
 	if err := s.git.Add(ctx, files...); err != nil {
 		return err
 	}
-	return s.git.Commit(ctx, message)
+	if err := s.git.Commit(ctx, message); err != nil {
+		return err
+	}
+	s.committed = true
+	return nil
 }
 
 // createTag creates the annotated release tag.
 func (s *service) createTag(ctx context.Context, version string) error {
 	tag := "v" + version
-	return s.git.CreateTag(ctx, tag, "Release version "+version)
+	if err := s.git.CreateTag(ctx, tag, "Release version "+version); err != nil {
+		return err
+	}
+	s.tagged = true
+	return nil
 }
 
 // push publishes the bump commit and its tag to origin.
@@ -60,6 +68,7 @@ func (s *service) push(ctx context.Context, version string) error {
 	}); err != nil {
 		return err
 	}
+	s.pushed++
 	return s.runStep("pushing tag", "origin v"+version, func() error {
 		return s.git.Push(ctx, "v"+version)
 	})
@@ -87,7 +96,7 @@ func (s *service) validateEnvironment(ctx context.Context) error {
 	if status != "" {
 		return fmt.Errorf("working directory has uncommitted changes; commit or stash them first")
 	}
-	return nil
+	return s.validateStageable(ctx)
 }
 
 // messagePattern derives the rollback pattern from the commit message

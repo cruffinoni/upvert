@@ -278,3 +278,19 @@ func TestCLIQuietFlagRegistered(t *testing.T) {
 		assert.Contains(t, stdout.String(), "--quiet", "%v", args)
 	}
 }
+
+func TestCLIReportsHookStepProgress(t *testing.T) {
+	dir := t.TempDir()
+	writeProjectFile(t, dir, "package.json", "{\"name\":\"demo\",\"version\":\"1.0.0\"}\n")
+
+	cmd := New()
+	var stdout, stderr bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{"patch", "--dir", dir, "--write", "--pre-bump", "true", "--post-bump", "true"})
+	require.NoErrorf(t, cmd.ExecuteContext(t.Context()), "execute:\n%s", stderr.String())
+
+	assert.Contains(t, stderr.String(), "running pre-bump hook")
+	assert.Contains(t, stderr.String(), "running post-bump hook")
+	assert.Contains(t, stdout.String(), "upvert patch (write)")
+}

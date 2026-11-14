@@ -30,6 +30,11 @@ type service struct {
 	operation operation
 	kind      semver.Kind
 	preLabel  string
+	// committed, tagged, and pushed record what the pipeline already applied so
+	// a failed run can be unwound.
+	committed bool
+	tagged    bool
+	pushed    int
 }
 
 // applyNoVersionAttr drops auxiliary in-code declarations from a single-language
@@ -292,6 +297,20 @@ func (s *service) addHookStep(label, value string) {
 	s.rep.Hooks = append(s.rep.Hooks, report.Step{Label: label, Value: value})
 }
 
+// runPostBumpStep runs the post-bump hook as a reported step.
+func (s *service) runPostBumpStep(ctx context.Context) error {
+	if s.cfg.PostBump == "" {
+		return nil
+	}
+	if err := s.runStep("running post-bump hook", s.cfg.PostBump, func() error {
+		return s.runPostBumpHook(ctx)
+	}); err != nil {
+		return err
+	}
+	s.addHookStep("post-bump", "ran")
+	return nil
+}
+
 // addNote records a diagnostic line for the report.
 func (s *service) addNote(format string, args ...any) {
 	if s.rep == nil {
@@ -368,8 +387,33 @@ func (s *service) nextVersion(current string) (string, error) {
 	}
 }
 
+// plannedSteps returns the number of progress steps the run reports.
+func (s *service) plannedSteps() int {
+	steps := 0
+	if s.cfg.PreBump != "" {
+		steps++
+	}
+	if len(s.versionChanges()) > 0 {
+		steps++
+	}
+	if !s.cfg.NoChangelog {
+		steps++
+	}
+	if s.cfg.Mode == ModeCommit || s.cfg.Mode == ModePush {
+		steps += 2
+	}
+	if s.cfg.Mode == ModePush {
+		steps += 2
+	}
+	if s.cfg.PostBump != "" {
+		steps++
+	}
+	return steps
+}
+
 // run executes the full bump pipeline for the configured mode.
 func (s *service) run(ctx context.Context) error {
+	defer s.progress.Close()
 	preview := s.cfg.Mode == ModePreview
 	proj, err := s.detect.Detect(s.root, s.cfg.VersionFile)
 	if err != nil {
@@ -441,12 +485,30 @@ func (s *service) run(ctx context.Context) error {
 		if s.cfg.PostBump != "" {
 			s.addHookStep("post-bump", "skipped (preview)")
 		}
+	} else {
+		s.progress.Steps(s.plannedSteps())
 	}
-	if err := s.runPreBumpHook(ctx, preview); err != nil {
-		return err
-	}
-	if !preview && s.cfg.PreBump != "" {
+	if s.cfg.PreBump != "" && !preview {
+		if err := s.runStep("running pre-bump hook", s.cfg.PreBump, func() error {
+			return s.runPreBumpHook(ctx, false)
+		}); err != nil {
+			return err
+		}
 		s.addHookStep("pre-bump", "ran")
+	}
+	var snapshot *rollbackSnapshot
+	rollback := false
+	if !preview {
+		snapshot, err = s.snapshotWrites()
+		if err != nil {
+			return err
+		}
+		rollback = true
+		defer func() {
+			if rollback {
+				s.rollbackWrites(ctx, snapshot, next)
+			}
+		}()
 	}
 	changed, err := s.writeVersionFiles(next, preview)
 	if err != nil {
@@ -474,17 +536,15 @@ func (s *service) run(ctx context.Context) error {
 		return s.renderReport()
 	}
 	if s.cfg.Mode == ModeWrite {
-		if err := s.runPostBumpHook(ctx); err != nil {
+		if err := s.runPostBumpStep(ctx); err != nil {
 			return err
-		}
-		if s.cfg.PostBump != "" {
-			s.addHookStep("post-bump", "ran")
 		}
 		if len(s.rep.Changes) == 0 {
 			s.rep.Footer = "No files were updated."
 		} else {
 			s.rep.Footer = s.successFooter(next)
 		}
+		rollback = false
 		return s.renderReport()
 	}
 	if err := s.runStep("committing", s.commitMessage(next), func() error {
@@ -502,13 +562,11 @@ func (s *service) run(ctx context.Context) error {
 			return err
 		}
 	}
-	if err := s.runPostBumpHook(ctx); err != nil {
+	if err := s.runPostBumpStep(ctx); err != nil {
 		return err
-	}
-	if s.cfg.PostBump != "" {
-		s.addHookStep("post-bump", "ran")
 	}
 	s.rep.Release = s.releaseSteps(next, s.cfg.Mode == ModePush)
 	s.rep.Footer = s.successFooter(next)
+	rollback = false
 	return s.renderReport()
 }

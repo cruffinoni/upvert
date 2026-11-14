@@ -1,8 +1,10 @@
 package bump
 
 import (
+	"bytes"
 	"errors"
 	"io"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -27,6 +29,8 @@ func (r *recordingProgress) Total(int64)   {}
 func (r *recordingProgress) Advance(int64) {}
 func (r *recordingProgress) Pause()        {}
 func (r *recordingProgress) Resume()       {}
+func (r *recordingProgress) Steps(int)     {}
+func (r *recordingProgress) Close()        {}
 
 func (r *recordingProgress) Finish(detail string) {
 	r.calls = append(r.calls, progressCall{kind: "finish", detail: detail})
@@ -129,4 +133,16 @@ func TestRunStepAbortsOnError(t *testing.T) {
 		{kind: "start", label: "tagging"},
 		{kind: "abort"},
 	}, progress.calls)
+}
+
+func TestPreviewShowsHookStepsOnce(t *testing.T) {
+	dir := initTestRepo(t, map[string]string{
+		"package.json": "{\"name\":\"demo\",\"version\":\"1.2.3\"}\n",
+	})
+	var out bytes.Buffer
+	cfg := Config{Dir: dir, Mode: ModePreview, PreBump: "true", PostBump: "true", Stdout: &out, Stderr: io.Discard}
+
+	require.NoError(t, Apply(t.Context(), cfg, Patch))
+
+	assert.Equal(t, 2, strings.Count(out.String(), "skipped (preview)"))
 }
