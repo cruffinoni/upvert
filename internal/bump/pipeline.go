@@ -30,6 +30,11 @@ type service struct {
 	operation operation
 	kind      semver.Kind
 	preLabel  string
+	// committed, tagged, and pushed record what the pipeline already applied so
+	// a failed run can be unwound.
+	committed bool
+	tagged    bool
+	pushed    int
 }
 
 // applyNoVersionAttr drops auxiliary in-code declarations from a single-language
@@ -448,6 +453,20 @@ func (s *service) run(ctx context.Context) error {
 	if !preview && s.cfg.PreBump != "" {
 		s.addHookStep("pre-bump", "ran")
 	}
+	var snapshot *rollbackSnapshot
+	rollback := false
+	if !preview {
+		snapshot, err = s.snapshotWrites()
+		if err != nil {
+			return err
+		}
+		rollback = true
+		defer func() {
+			if rollback {
+				s.rollbackWrites(ctx, snapshot, next)
+			}
+		}()
+	}
 	changed, err := s.writeVersionFiles(next, preview)
 	if err != nil {
 		return err
@@ -485,6 +504,7 @@ func (s *service) run(ctx context.Context) error {
 		} else {
 			s.rep.Footer = s.successFooter(next)
 		}
+		rollback = false
 		return s.renderReport()
 	}
 	if err := s.runStep("committing", s.commitMessage(next), func() error {
@@ -510,5 +530,6 @@ func (s *service) run(ctx context.Context) error {
 	}
 	s.rep.Release = s.releaseSteps(next, s.cfg.Mode == ModePush)
 	s.rep.Footer = s.successFooter(next)
+	rollback = false
 	return s.renderReport()
 }
