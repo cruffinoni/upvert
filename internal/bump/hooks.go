@@ -27,9 +27,6 @@ func (s *service) runPreBumpHook(ctx context.Context, dryRun bool) error {
 	if dryRun || s.cfg.PreBump == "" {
 		return nil
 	}
-	if !s.cfg.Quiet {
-		s.log.Infof("running pre-bump hook")
-	}
 	return s.runHook(ctx, s.cfg.PreBump, "pre-bump hook")
 }
 
@@ -37,9 +34,6 @@ func (s *service) runPreBumpHook(ctx context.Context, dryRun bool) error {
 func (s *service) runPostBumpHook(ctx context.Context) error {
 	if s.cfg.PostBump == "" {
 		return nil
-	}
-	if !s.cfg.Quiet {
-		s.log.Infof("running post-bump hook")
 	}
 	return s.runHook(ctx, s.cfg.PostBump, "post-bump hook")
 }

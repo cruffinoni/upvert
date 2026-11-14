@@ -14,8 +14,9 @@ import (
 )
 
 const (
-	progressInitialDelay    = 100 * time.Millisecond
-	progressRefresh         = 100 * time.Millisecond
+	// progressRefresh is the repaint interval of the animated step line.
+	progressRefresh = 100 * time.Millisecond
+	// defaultProgressBarWidth is the fallback width of the download bar.
 	defaultProgressBarWidth = 20
 )
 
@@ -23,8 +24,9 @@ var progressFrames = []string{"|", "/", "-", "\\"}
 
 // Progress reports at most one active step. Start begins a step, Total and
 // Advance set its optional measurable progress, and Finish or Abort completes
-// it. Pause and Resume let callers write other output without corrupting the
-// active line.
+// it. Steps declares how many steps the run reports so the active line can show
+// its position, and Close stops the renderer. Pause and Resume let callers write
+// other output without corrupting the active line.
 type Progress interface {
 	Start(label string)
 	Total(total int64)
@@ -33,6 +35,8 @@ type Progress interface {
 	Abort()
 	Pause()
 	Resume()
+	Steps(total int)
+	Close()
 }
 
 // ProgressOptions controls how NewProgress renders steps.
@@ -147,6 +151,8 @@ func (quietProgress) Finish(string) {}
 func (quietProgress) Abort()        {}
 func (quietProgress) Pause()        {}
 func (quietProgress) Resume()       {}
+func (quietProgress) Steps(int)     {}
+func (quietProgress) Close()        {}
 
 // lineProgress prints one persistent line per step for non-terminals.
 type lineProgress struct {
@@ -237,13 +243,24 @@ func (r *lineProgress) Pause() {
 // Resume is a no-op for plain lines; Finish reprints an interrupted label.
 func (r *lineProgress) Resume() {}
 
-// terminalProgress animates one line on an interactive terminal.
+// Steps is a no-op for plain lines.
+func (r *lineProgress) Steps(int) {}
+
+// Close is a no-op for plain lines.
+func (r *lineProgress) Close() {}
+
+// terminalProgress animates one line on an interactive terminal. A single
+// renderer runs for the whole command: Start swaps the label and paints
+// immediately, so short steps stay visible and a slow step keeps its label,
+// position, and elapsed time on screen.
 type terminalProgress struct {
 	out io.Writer
 	// width is the terminal width, or a fallback when it is unknown.
 	width int
 	// transient clears completed steps instead of printing them.
 	transient bool
+	// clock overrides the time source in tests.
+	clock func() time.Time
 
 	mu        sync.Mutex
 	label     string
@@ -252,11 +269,23 @@ type terminalProgress struct {
 	frame     int
 	active    bool
 	paused    bool
+	closed    bool
+	stepIndex int
+	stepTotal int
+	stepStart time.Time
 	cancel    context.CancelFunc
 	group     *errgroup.Group
 	lastWidth int
 	// completed holds transient steps so a later failure can show what ran.
 	completed []string
+}
+
+// now returns the current time from the configured clock.
+func (r *terminalProgress) now() time.Time {
+	if r.clock != nil {
+		return r.clock()
+	}
+	return time.Now()
 }
 
 // writeLineLocked repaints the active line without ANSI escapes.
@@ -279,16 +308,32 @@ func (r *terminalProgress) writeLineLocked(line string) {
 	r.lastWidth = count
 }
 
-// renderLocked paints the current frame and download state.
-func (r *terminalProgress) renderLocked() {
-	if !r.active || r.paused || r.label == "" {
+// clearLineLocked erases the active line without ANSI escapes.
+func (r *terminalProgress) clearLineLocked() {
+	if r.lastWidth == 0 {
 		return
 	}
-	frame := progressFrames[r.frame%len(progressFrames)]
-	prefix := frame + " " + r.label + "..."
-	line := prefix
-	switch {
-	case r.total > 0:
+	fmt.Fprintf(r.out, "\r%s\r", strings.Repeat(" ", r.lastWidth))
+	r.lastWidth = 0
+}
+
+// lineLocked renders the active step, its position, its elapsed time, and any
+// measurable progress.
+func (r *terminalProgress) lineLocked() string {
+	line := progressFrames[r.frame%len(progressFrames)] + " " + r.label + "..."
+	if r.stepTotal > 0 {
+		index := r.stepIndex
+		if index > r.stepTotal {
+			index = r.stepTotal
+		}
+		line += fmt.Sprintf("  (%d/%d)", index, r.stepTotal)
+		elapsed := int(r.now().Sub(r.stepStart).Seconds())
+		if elapsed < 0 {
+			elapsed = 0
+		}
+		line += fmt.Sprintf("  %ds", elapsed)
+	}
+	if r.total > 0 {
 		ratio := float64(r.done) / float64(r.total)
 		if ratio < 0 {
 			ratio = 0
@@ -301,35 +346,30 @@ func (r *terminalProgress) renderLocked() {
 		if width <= 0 {
 			width = 80
 		}
-		barWidth := width - len([]rune(prefix)) - len([]rune(suffix)) - 4
+		barWidth := width - len([]rune(line)) - len([]rune(suffix)) - 4
 		if barWidth < 10 {
 			barWidth = 10
 		}
 		if barWidth > 30 {
 			barWidth = 30
 		}
-		line = prefix + " " + progressBarWithWidth(r.done, r.total, barWidth) + suffix
-	case r.done > 0:
-		line = prefix + " " + formatBytes(r.done)
+		line += " " + progressBarWithWidth(r.done, r.total, barWidth) + suffix
+	} else if r.done > 0 {
+		line += " " + formatBytes(r.done)
 	}
-	r.writeLineLocked(line)
+	return line
+}
+
+// renderLocked paints the current frame and progress state.
+func (r *terminalProgress) renderLocked() {
+	if !r.active || r.paused || r.label == "" {
+		return
+	}
+	r.writeLineLocked(r.lineLocked())
 }
 
 // animate repaints the active line until ctx is canceled.
 func (r *terminalProgress) animate(ctx context.Context) {
-	timer := time.NewTimer(progressInitialDelay)
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return
-	case <-timer.C:
-	}
-	r.mu.Lock()
-	if r.active && !r.paused {
-		r.renderLocked()
-	}
-	r.mu.Unlock()
-
 	ticker := time.NewTicker(progressRefresh)
 	defer ticker.Stop()
 	for {
@@ -347,7 +387,7 @@ func (r *terminalProgress) animate(ctx context.Context) {
 	}
 }
 
-// stopAnimation stops the redraw loop without changing the step state.
+// stopAnimation stops the repaint loop.
 func (r *terminalProgress) stopAnimation() {
 	r.mu.Lock()
 	cancel, group := r.cancel, r.group
@@ -361,17 +401,12 @@ func (r *terminalProgress) stopAnimation() {
 	}
 }
 
-// Start begins an animated step line.
-func (r *terminalProgress) Start(label string) {
-	r.stopAnimation()
+// ensureLoopLocked starts the repaint loop once for the whole command.
+func (r *terminalProgress) ensureLoopLocked() {
+	if r.closed || r.cancel != nil {
+		return
+	}
 	ctx, cancel := context.WithCancel(context.Background())
-	r.mu.Lock()
-	r.label = label
-	r.total = 0
-	r.done = 0
-	r.frame = 0
-	r.active = true
-	r.paused = false
 	r.cancel = cancel
 	r.group = &errgroup.Group{}
 	group := r.group
@@ -379,6 +414,29 @@ func (r *terminalProgress) Start(label string) {
 		r.animate(ctx)
 		return nil
 	})
+}
+
+// Start begins a step and paints its first frame immediately.
+func (r *terminalProgress) Start(label string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.label = label
+	r.total = 0
+	r.done = 0
+	r.frame = 0
+	r.active = true
+	r.paused = false
+	r.stepIndex++
+	r.stepStart = r.now()
+	r.ensureLoopLocked()
+	r.renderLocked()
+}
+
+// Steps declares how many steps the run reports.
+func (r *terminalProgress) Steps(total int) {
+	r.mu.Lock()
+	r.stepTotal = total
+	r.stepIndex = 0
 	r.mu.Unlock()
 }
 
@@ -394,18 +452,8 @@ func (r *terminalProgress) Advance(done int64) {
 	r.mu.Unlock()
 }
 
-// clearLineLocked erases the active line without ANSI escapes.
-func (r *terminalProgress) clearLineLocked() {
-	if r.lastWidth == 0 {
-		return
-	}
-	fmt.Fprintf(r.out, "\r%s\r", strings.Repeat(" ", r.lastWidth))
-	r.lastWidth = 0
-}
-
-// finish stops animation and prints or clears the final line for the active step.
+// finish stops the active step and prints or clears its line.
 func (r *terminalProgress) finish(detail string, failed bool) {
-	r.stopAnimation()
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	label, done, total := r.label, r.done, r.total
@@ -415,6 +463,7 @@ func (r *terminalProgress) finish(detail string, failed bool) {
 	r.label = ""
 	r.total = 0
 	r.done = 0
+	r.stepStart = time.Time{}
 	if label == "" {
 		return
 	}
@@ -444,19 +493,18 @@ func (r *terminalProgress) finish(detail string, failed bool) {
 	}
 }
 
-// Finish completes the active step line.
+// Finish completes the active step.
 func (r *terminalProgress) Finish(detail string) {
 	r.finish(detail, false)
 }
 
-// Abort marks the active step line failed.
+// Abort marks the active step failed.
 func (r *terminalProgress) Abort() {
 	r.finish("", true)
 }
 
-// Pause stops the animation and clears the active line.
+// Pause stops painting and clears the active line.
 func (r *terminalProgress) Pause() {
-	r.stopAnimation()
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if !r.active || r.paused || r.label == "" {
@@ -466,21 +514,26 @@ func (r *terminalProgress) Pause() {
 	r.clearLineLocked()
 }
 
-// Resume restarts the animation for a paused step.
+// Resume repaints the active line.
 func (r *terminalProgress) Resume() {
 	r.mu.Lock()
+	defer r.mu.Unlock()
 	if !r.active || !r.paused || r.label == "" {
-		r.mu.Unlock()
 		return
 	}
-	ctx, cancel := context.WithCancel(context.Background())
 	r.paused = false
-	r.cancel = cancel
-	r.group = &errgroup.Group{}
-	group := r.group
-	group.Go(func() error {
-		r.animate(ctx)
-		return nil
-	})
+	r.renderLocked()
+}
+
+// Close stops the renderer and clears the active line.
+func (r *terminalProgress) Close() {
+	r.mu.Lock()
+	r.closed = true
+	r.active = false
+	r.paused = false
+	r.label = ""
+	r.completed = nil
+	r.clearLineLocked()
 	r.mu.Unlock()
+	r.stopAnimation()
 }

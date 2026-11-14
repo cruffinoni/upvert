@@ -201,10 +201,14 @@ warnings, errors, and step progress stay on standard error.
 
 Real runs also report each operation while it happens: writing the version
 files, updating the changelog, committing, tagging, and pushing. On an
-interactive terminal the current step is animated in place and cleared before
-the report, so fast runs look the same as a preview. When standard error is
-redirected, each step is a plain line, which keeps CI logs readable. Preview
-runs print no progress, and `--quiet` suppresses it for real runs.
+interactive terminal a single animated line names the current step, shows its
+position in the run, and counts the seconds spent on it, so a slow hook or push
+is immediately identifiable; the line is cleared before the report. Because the
+line is painted as soon as a step starts, a fast run shows one brief line while
+a stuck step keeps its label and elapsed time on screen. When standard error is
+redirected, each step is a plain line, which keeps CI logs readable. A run that
+fails after writing restores the files it touched, so the work tree is left as
+it was. Preview runs print no progress, and `--quiet` suppresses it for real runs.
 
 ### Project detection
 
