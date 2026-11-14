@@ -220,8 +220,11 @@ A repository with more than one ecosystem is treated as having one platform
 version. Every discovered declaration is synchronized, including
 `package-lock.json`, `[tool.poetry]`, `[workspace.package]`, and nested Python
 modules. Generated trees such as `.git`, `node_modules`, `vendor`, `venv`,
-`build`, `dist`, and `*.egg-info` are ignored. An untagged multi-language
-repository starts from `0.0.0`, so the first `patch` bump produces `0.0.1`.
+`build`, `dist`, and `*.egg-info` are ignored, and inside a git work tree the
+repository ignore rules decide what counts as a project file, so scratch
+directories and local fixtures can never be mistaken for manifests. An
+untagged multi-language repository starts from `0.0.0`, so the first `patch`
+bump produces `0.0.1`.
 
 Go projects without a static semantic `Version` declaration — common when
 GoReleaser injects the version with `-ldflags -X` — use git tags as the version

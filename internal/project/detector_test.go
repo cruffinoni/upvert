@@ -3,6 +3,7 @@ package project
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -200,4 +201,82 @@ func TestDetectExplicitPythonProjectIncludesModules(t *testing.T) {
 	for i := range want {
 		assert.Equal(t, want[i], files[i].Path)
 	}
+}
+
+// gitProject runs git in dir and fails the test on error.
+func gitProject(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	command := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	output, err := command.CombinedOutput()
+	require.NoErrorf(t, err, "git %v\n%s", args, output)
+}
+
+// initGitProject creates a committed repository below a temporary directory.
+func initGitProject(t *testing.T, files map[string]string) string {
+	t.Helper()
+	dir := t.TempDir()
+	for name, content := range files {
+		writeProjectFile(t, dir, name, content)
+	}
+	gitProject(t, dir, "init", "-q", "-b", "main")
+	gitProject(t, dir, "add", "-A")
+	gitProject(t, dir, "-c", "user.name=Upvert Test", "-c", "user.email=upvert@example.com", "commit", "-q", "-m", "initial commit")
+	return dir
+}
+
+func TestDetectIgnoresGitIgnoredManifests(t *testing.T) {
+	dir := initGitProject(t, map[string]string{
+		"go.mod":     "module example.com/demo\n",
+		"version.go": "package demo\n\nconst Version = \"1.2.3\"\n",
+		".gitignore": ".tmp/\n",
+	})
+	writeProjectFile(t, dir, ".tmp/smoke/package.json", "{\"name\":\"demo\",\"version\":\"0.0.2\"}")
+
+	proj, err := NewDetector(nil).Detect(dir, "")
+	require.NoError(t, err)
+	assert.Equal(t, ecosystem.Go, proj.Kind)
+	assert.False(t, proj.IsMulti())
+	for _, file := range proj.Files() {
+		assert.NotContains(t, file.Path, ".tmp")
+	}
+}
+
+func TestDetectKeepsTrackedNestedManifests(t *testing.T) {
+	dir := initGitProject(t, map[string]string{
+		"go.mod":                    "module example.com/demo\n",
+		"version.go":                "package demo\n\nconst Version = \"1.2.3\"\n",
+		"packages/web/package.json": "{\"name\":\"web\",\"version\":\"1.2.3\"}",
+	})
+
+	proj, err := NewDetector(nil).Detect(dir, "")
+	require.NoError(t, err)
+	assert.True(t, proj.IsMulti())
+	assert.Contains(t, proj.Files(), ecosystem.File{Path: "packages/web/package.json"})
+	assert.Contains(t, proj.Files(), ecosystem.File{Path: "version.go", InCode: true})
+}
+
+func TestDetectIncludesUntrackedManifests(t *testing.T) {
+	dir := initGitProject(t, map[string]string{
+		"go.mod":     "module example.com/demo\n",
+		"version.go": "package demo\n\nconst Version = \"1.2.3\"\n",
+	})
+	writeProjectFile(t, dir, "packages/web/package.json", "{\"name\":\"web\",\"version\":\"1.2.3\"}")
+
+	proj, err := NewDetector(nil).Detect(dir, "")
+	require.NoError(t, err)
+	assert.True(t, proj.IsMulti())
+	assert.Contains(t, proj.Files(), ecosystem.File{Path: "packages/web/package.json"})
+}
+
+func TestDetectSkipsHiddenDirectoriesOutsideGit(t *testing.T) {
+	dir := t.TempDir()
+	writeProjectFile(t, dir, "go.mod", "module example.com/demo\n")
+	writeProjectFile(t, dir, "version.go", "package demo\n\nconst Version = \"1.2.3\"\n")
+	writeProjectFile(t, dir, ".tmp/smoke/package.json", "{\"version\":\"0.0.2\"}")
+	writeProjectFile(t, dir, ".cache/work/package.json", "{\"version\":\"0.0.2\"}")
+
+	proj, err := NewDetector(nil).Detect(dir, "")
+	require.NoError(t, err)
+	assert.Equal(t, ecosystem.Go, proj.Kind)
+	assert.False(t, proj.IsMulti())
 }
