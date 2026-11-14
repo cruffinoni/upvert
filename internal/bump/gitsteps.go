@@ -87,7 +87,7 @@ func (s *service) validateEnvironment(ctx context.Context) error {
 	if status != "" {
 		return fmt.Errorf("working directory has uncommitted changes; commit or stash them first")
 	}
-	return nil
+	return s.validateStageable(ctx)
 }
 
 // messagePattern derives the rollback pattern from the commit message
